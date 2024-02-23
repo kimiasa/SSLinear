@@ -1,0 +1,82 @@
+from typing import Optional
+
+import torch
+import torch.nn as nn
+import torch.nn.init as init
+import numpy as np
+
+from .ssl_triton.impl import HashMM
+
+import pdb
+
+
+controls = {}
+controls['triton_allow_tf32'] = False
+controls['triton_allow_autotune'] = False
+
+class SketchStructuredLinearFunction(torch.autograd.Function):
+             
+    @staticmethod
+    @torch.cuda.amp.custom_fwd(cast_inputs=torch.float16)
+    def forward(ctx, input: torch.tensor, weight: torch.tensor,
+                random_numbers: torch.tensor, redn_factor: int) -> torch.tensor:  
+
+        ctx._fwd_used_autocast = torch.is_autocast_enabled()
+
+        '''
+        Args:
+            input (Tensor): (batch_size, in_features) (M, K)
+            hashed_weight (Tensor): (CK, N), the compressed weight matrix for layer
+            random_numbers (Tensor): (4), (R3 * k_index + R2 * n_index  + R1) % R0
+            out_features (int): N
+            redn_factor (int): The factor of 2 to determine compression
+
+        Returns:
+            output (Tensor): (batch_siz, out_features)
+        '''
+
+        assert(random_numbers.numel() == 4)
+        R3, R2, R1, R0 = random_numbers[3].item(), random_numbers[2].item(), random_numbers[1].item(), random_numbers[0].item()
+
+        batch_size, in_features, out_features= input.shape[0], input.shape[1], weight.shape[0]
+
+        output = HashMM.ssl_forward_tl(input, weight, batch_size, in_features, out_features, redn_factor, R3, R2, R1, R0,
+                                      allow_tf32=controls['triton_allow_tf32'], allow_autotune=controls['triton_allow_autotune'])
+        
+        ctx.save_for_backward(input, weight, random_numbers)
+        ctx.redn_factor = redn_factor
+
+        return output
+
+    @staticmethod
+    @torch.cuda.amp.custom_bwd
+    def backward(ctx, grad):
+
+        
+        with torch.cuda.amp.autocast(ctx._fwd_used_autocast):
+        
+            input, weight, random_numbers = ctx.saved_tensors
+            
+            assert(random_numbers.numel() == 4)
+            R3, R2, R1, R0 = random_numbers[3].item(), random_numbers[2].item(
+            ), random_numbers[1].item(), random_numbers[0].item()
+
+            redn_factor = ctx.redn_factor
+            M, K, N= input.shape[0], input.shape[1], weight.shape[0]
+
+            Ck = K // redn_factor
+
+            W = torch.arange((N*Ck), device='cuda', dtype=torch.float16).reshape(Ck, N)
+            
+            IDX = HashMM.ssl_forward_tl(torch.eye(K, device='cuda', dtype=torch.float16), W, K, K, N, redn_factor, R3, R2, R1, R0, 
+                                        allow_tf32=controls['triton_allow_tf32'], allow_autotune=controls['triton_allow_autotune']) 
+            
+            IDX = IDX.to(torch.long)
+            
+            input_grad = grad.matmul(weight)
+            weight_grad = input.T.matmul(grad)
+                    
+            return input_grad[IDX], weight_grad[IDX], None, None 
+    
+roast_comp_linear = SketchStructuredLinearFunction.apply
+    
