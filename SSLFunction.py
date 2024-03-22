@@ -5,9 +5,8 @@ import torch.nn as nn
 import torch.nn.init as init
 import numpy as np
 
-from .ssl_triton.impl import HashMM
-
-import pdb
+from .RoastComp.sketch_structured_linear.impl.SSLForward import *
+from .RoastComp.sketch_structured_linear.impl.SSLBackward import *
 
 
 controls = {}
@@ -26,13 +25,13 @@ class SketchStructuredLinearFunction(torch.autograd.Function):
         '''
         Args:
             input (Tensor): (batch_size, in_features) (M, K)
-            hashed_weight (Tensor): (CK, N), the compressed weight matrix for layer
-            random_numbers (Tensor): (4), (R3 * k_index + R2 * n_index  + R1) % R0
+            hashed_weight (Tensor): (N, cK), the compressed weight matrix for layer, c is compression factor
+            random_numbers (Tensor): (4), hash_function: (R0 * (1+c_index) + R1 * (1+k_index) + R2 * n_index  + R3)
             out_features (int): N
             redn_factor (int): The factor of 2 to determine compression
 
         Returns:
-            output (Tensor): (batch_siz, out_features)
+            output (Tensor): (batch_size, out_features)
         '''
 
         assert(random_numbers.numel() == 4)
@@ -64,19 +63,17 @@ class SketchStructuredLinearFunction(torch.autograd.Function):
             redn_factor = ctx.redn_factor
             M, K, N= input.shape[0], input.shape[1], weight.shape[0]
 
-            Ck = K // redn_factor
-
             W = torch.arange((N*Ck), device='cuda', dtype=torch.float16).reshape(Ck, N)
+
+            input_grad, weight_grad = ssl_backward_tl(input.contiguous(), weight, grad.contiguous(), init_factor, M, K, N, redn_factor, R3, R2, R1,
+                                                        R0, allow_tf32=controls['triton_allow_tf32'])
             
-            IDX = HashMM.ssl_forward_tl(torch.eye(K, device='cuda', dtype=torch.float16), W, K, K, N, redn_factor, R3, R2, R1, R0, 
-                                        allow_tf32=controls['triton_allow_tf32'], allow_autotune=controls['triton_allow_autotune']) 
-            
-            IDX = IDX.to(torch.long)
             
             input_grad = grad.matmul(weight)
             weight_grad = input.T.matmul(grad)
                     
-            return input_grad[IDX], weight_grad[IDX], None, None 
+            return input_grad, weight_grad, None, None 
     
 roast_comp_linear = SketchStructuredLinearFunction.apply
+
     

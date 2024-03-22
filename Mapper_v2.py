@@ -65,8 +65,6 @@ class HasherFactory:
         raise NotImplementedError
 
 
-''' different mapping mechanisms '''
-''' implements the simplest HashedNet mapping using uhash '''
 class Mapper:
     def __init__(self, **kwargs):
         pass
@@ -126,7 +124,7 @@ class SparseRoastMapper(Mapper):
       super(SparseRoastMapper, self).__init__()
       self.hasher = HasherFactory.get(hasher, **kwargs)
     
-    def get_mlp_idx(self, w_shape, block_k, block_n, redn_factor, **kwargs):
+    def get_mlp_idx(self, w_shape, block_k, block_n, redn_factor, vectorization, **kwargs):
         assert(len(w_shape) == 2)
         w_shape = list(w_shape)
         w_shape[0], w_shape[1] = w_shape[1], w_shape[0]
@@ -135,7 +133,7 @@ class SparseRoastMapper(Mapper):
         assert(len(random_numbers) == 4)
 
         offset = self.get_sparse_idx(redn_factor, w_shape[0], w_shape[1], random_numbers[3], random_numbers[2], 
-                                random_numbers[1], random_numbers[0], block_n, block_k)
+                                random_numbers[1], random_numbers[0], block_n, block_k, vectorization)
 
         idx = offset
         return np.transpose(idx)
@@ -143,7 +141,7 @@ class SparseRoastMapper(Mapper):
     def get_sparse_idx(self, redn_factor,
                 K : int, N: int,
                 R3: int, R2: int, R1: int, R0: int,
-                BLOCK_SIZE_N: int, BLOCK_SIZE_K: int,
+                BLOCK_SIZE_N: int, BLOCK_SIZE_K: int, VEC: int,
            ):
           stride_bn = 1
           stride_bk = N
@@ -151,10 +149,11 @@ class SparseRoastMapper(Mapper):
           for pid_n in range((N + BLOCK_SIZE_N - 1)//BLOCK_SIZE_N):
               for k in range(0, (K + BLOCK_SIZE_K*redn_factor - 1) // (BLOCK_SIZE_K* redn_factor)):
                   for ck in range(0, redn_factor):
-
-                      block = (k* BLOCK_SIZE_K + ((torch.arange(BLOCK_SIZE_K).long() + (R1*pid_n + R2*k + R3*ck + R0))%BLOCK_SIZE_K).reshape(-1,1)) * stride_bk + (pid_n * BLOCK_SIZE_N + torch.arange(BLOCK_SIZE_N).reshape(1,-1)) * stride_bn
+                      
+                      block = (k* BLOCK_SIZE_K + (torch.arange(BLOCK_SIZE_K).long() + (BLOCK_SIZE_K - (((R2*pid_n + R1*(k+1) + R0*(ck+1) + R3) * VEC) % BLOCK_SIZE_K))) % BLOCK_SIZE_K).reshape(-1,1) * stride_bk + (pid_n * BLOCK_SIZE_N + torch.arange(BLOCK_SIZE_N).reshape(1,-1)) * stride_bn
                       off = k*BLOCK_SIZE_K* redn_factor + ck*BLOCK_SIZE_K
                       idx[off:off+BLOCK_SIZE_K,pid_n*BLOCK_SIZE_N:(pid_n+1)*BLOCK_SIZE_N] = block
+
           return idx
 
 
