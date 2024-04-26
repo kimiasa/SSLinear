@@ -1,5 +1,7 @@
 from math import sqrt
 
+from math import sqrt
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -37,6 +39,7 @@ class SSL(nn.Module):
             
             
         self.hasher = HasherFactory.get("uhash", self.seed)
+        self.hasher = HasherFactory.get("uhash", self.seed)
 
     def forward(self, x):
         original_shape = x.shape
@@ -61,10 +64,17 @@ class SSL(nn.Module):
         dim_gt_2 = len(shape) > 2
         if (dim_gt_2):
             x = x.view(*shape[:-1], x.shape[-1]).contiguous()
+            x = x.view(*shape[:-1], x.shape[-1]).contiguous()
         return x
+    
     
     @property
     def saving(self):
+        return (self.weight.numel() / (self.in_features * self.out_features))
+
+    def __repr__(self):        
+        return "SketchStructuredLinear(in={}, out={}, compression={}, seed={}, saving={})".format(self.in_features, self.out_features, self.redn_factor, self.seed, self.saving)
+    
         return (self.weight.numel() / (self.in_features * self.out_features))
 
     def __repr__(self):        

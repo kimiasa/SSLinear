@@ -62,6 +62,7 @@ class SketchStructuredLinearFunction(torch.autograd.Function):
             R3, R2, R1, R0 = random_numbers[3].item(), random_numbers[2].item(
             ), random_numbers[1].item(), random_numbers[0].item()
 
+            
             redn_factor = ctx.redn_factor
             M, K, N= input.shape[0], input.shape[1], weight.shape[0]
 

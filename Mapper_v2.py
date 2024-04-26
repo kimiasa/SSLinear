@@ -34,7 +34,7 @@ class MurmurHasher(Hasher):
         return torch.LongTensor(output).to(device) %target_size
 
 class UHasher(Hasher):
-    def __init__(self, seed, P=11587, **kwargs):
+    def __init__(self, seed, P=92387, **kwargs):
         super(UHasher, self).__init__(seed)
         self.P = P
         self.gen = torch.Generator()
