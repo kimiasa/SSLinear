@@ -1,20 +1,23 @@
-import torch
-import torch.nn as nn
 from math import sqrt
 
-try:
-    from .SketchStructuredLinear import SketchStructuredLinear
-    from .SSLFunction import SketchStructuredLinearFunction
-    from .Mapper_v2 import *
-except:
-    from SketchStructuredLinear import SketchStructuredLinear
-    from SSLFunction import SketchStructuredLinearFunction
-    from Mapper_v2 import *
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.nn import init
+
+import time
+
+from .SSLFunction import SketchStructuredLinearFunction
+from .SSLFunction import ssl_linear
+from .Mapper_v2 import *
 
 
-class SSL(SketchStructuredLinear):
-    def __init__(self, *args, bias, redn_factor=1, seed=1024):
-        super().__init__(*args)
+class SSL(nn.Module):
+    def __init__(self, in_features, out_features, bias=None, redn_factor=1, seed=1024):
+        super(SSL, self).__init__()
+        
+        self.in_features = in_features
+        self.out_features = out_features
         self.redn_factor = redn_factor
         self.seed = seed
 
@@ -27,18 +30,26 @@ class SSL(SketchStructuredLinear):
         nn.init.uniform_(self.weight.data, a=-
                             self.init_scale, b=self.init_scale)
 
-        self.bias = None
-        if bias:
-            self.bias = nn.Parameter(torch.zeros(
-                self.odim, dtype=torch.float), requires_grad=True)
+        #self.bias = None
+        #if bias is None:
+        #    self.bias = nn.Parameter(torch.zeros(
+        #        self.out_features, dtype=torch.float), requires_grad=True)
             
-        self.hasher = HasherFactory.get(self.seed)
+            
+        self.hasher = HasherFactory.get("uhash", self.seed)
 
-    def forward_matmul(self, x):
-        x = SketchStructuredLinearFunction(self.preprocess(x, x.shape), self.weight, self.hasher.random_numbers, self.redn_factor)
-        if self.bias is not None:
-            x = x + self.bias
-        return self.postprocess(x, x.shape)
+    def forward(self, x):
+        original_shape = x.shape
+        
+        x = self.preprocess(x, original_shape)
+        x = ssl_linear(x, self.weight, self.hasher.random_numbers, self.redn_factor)
+        
+        ## fused
+        #if self.bias is not None:
+        #    x = x + self.bias
+        x = self.postprocess(x, original_shape)
+        
+        return x
     
     def preprocess(self, x, shape):
         dim_gt_2 = len(shape) > 2 
@@ -49,10 +60,14 @@ class SSL(SketchStructuredLinear):
     def postprocess(self, x, shape):
         dim_gt_2 = len(shape) > 2
         if (dim_gt_2):
-            x = x.view(*shape[:-1], x.shape[-1])
+            x = x.view(*shape[:-1], x.shape[-1]).contiguous()
         return x
-
+    
     @property
     def saving(self):
-        return (self.WHelper.weight.numel() / (self.in_features * self.out_features))
+        return (self.weight.numel() / (self.in_features * self.out_features))
+
+    def __repr__(self):        
+        return "SketchStructuredLinear(in={}, out={}, compression={}, seed={}, saving={})".format(self.in_features, self.out_features, self.redn_factor, self.seed, self.saving)
+    
     

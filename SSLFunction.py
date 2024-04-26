@@ -5,8 +5,10 @@ import torch.nn as nn
 import torch.nn.init as init
 import numpy as np
 
-from .RoastComp.sketch_structured_linear.impl.SSLForward import *
-from .RoastComp.sketch_structured_linear.impl.SSLBackward import *
+from .SSL_Kernel.sketch_structured_linear.impl.SSLForward import *
+from .SSL_Kernel.sketch_structured_linear.impl.SSLBackward import *
+
+import time
 
 
 controls = {}
@@ -39,7 +41,7 @@ class SketchStructuredLinearFunction(torch.autograd.Function):
 
         batch_size, in_features, out_features= input.shape[0], input.shape[1], weight.shape[0]
 
-        output = HashMM.ssl_forward_tl(input, weight, batch_size, in_features, out_features, redn_factor, R3, R2, R1, R0,
+        output = ssl_forward_tl(input, weight.T.contiguous(), batch_size, in_features, out_features, redn_factor, R3, R2, R1, R0,
                                       allow_tf32=controls['triton_allow_tf32'], allow_autotune=controls['triton_allow_autotune'])
         
         ctx.save_for_backward(input, weight, random_numbers)
@@ -63,17 +65,16 @@ class SketchStructuredLinearFunction(torch.autograd.Function):
             redn_factor = ctx.redn_factor
             M, K, N= input.shape[0], input.shape[1], weight.shape[0]
 
-            W = torch.arange((N*Ck), device='cuda', dtype=torch.float16).reshape(Ck, N)
-
-            input_grad, weight_grad = ssl_backward_tl(input.contiguous(), weight, grad.contiguous(), init_factor, M, K, N, redn_factor, R3, R2, R1,
+            input_grad, weight_grad = ssl_backward_tl(input.contiguous(), weight, grad.contiguous(), M, K, N, redn_factor, R3, R2, R1,
                                                         R0, allow_tf32=controls['triton_allow_tf32'])
-            
-            
-            input_grad = grad.matmul(weight)
-            weight_grad = input.T.matmul(grad)
-                    
-            return input_grad, weight_grad, None, None 
+        
+            #bias_grad = None
+            #if ctx.needs_input_grad[2]:
+            #    bias_grad = grad.sum(0)
+
+                                          
+            return input_grad, weight_grad.T.contiguous(), None, None 
     
-roast_comp_linear = SketchStructuredLinearFunction.apply
+ssl_linear = SketchStructuredLinearFunction.apply
 
     

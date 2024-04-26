@@ -13,7 +13,7 @@ class SketchStructuredLinear(nn.Module):
         """Subclasses should call reset_parameters if needed
         """
         factory_kwargs = {'device': device, 'dtype': dtype}
-        super().__init__()
+        super(SketchStructuredLinear, self).__init__()
         self.in_features = in_features
         self.out_features = out_features
         
@@ -53,7 +53,9 @@ class SketchStructuredLinear(nn.Module):
         output = self.forward_matmul(x)
         # Convert bias to output.dtype in case of AMP, otherwise bias and activation will be in FP32
         return (output + self.bias.to(dtype=output.dtype)) if self.bias is not None else output
-
+    
+    def __repr__(self):
+        raise NotImplementedError
 
     @property
     def saving(self):
