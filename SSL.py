@@ -8,7 +8,9 @@ from torch.nn import init
 from .SSLFunction import ssl_linear
 from .Mapper_v2 import *
 
-BLOCK_K_SIZE_MIN = 64
+from .block_sizes import BLOCK_SIZE_K as BLOCK_K_SIZE_MIN
+
+#BLOCK_K_SIZE_MIN = 32
 
 class SSL(nn.Module):
     def __init__(self, in_features: int, out_features: int, bias: bool = True, 
@@ -20,8 +22,10 @@ class SSL(nn.Module):
         assert redn_factor > 0 and (redn_factor & (redn_factor - 1)) == 0 # reduction factor should be power of 2
         self.redn_factor = redn_factor
         
-        self.out_features = out_features         
-        self.red_in_features = (in_features  // redn_factor + BLOCK_K_SIZE_MIN - 1) // BLOCK_K_SIZE_MIN * BLOCK_K_SIZE_MIN        
+        self.out_features = out_features  
+        self.in_features = in_features    
+       
+        self.red_in_features = (in_features  // redn_factor + BLOCK_K_SIZE_MIN - 1) // BLOCK_K_SIZE_MIN * BLOCK_K_SIZE_MIN 
 
         self.seed = seed
 
@@ -33,8 +37,10 @@ class SSL(nn.Module):
             self.register_parameter('bias', None)
         self.reset_parameters()
 
-        self.hasher = HasherFactory.get("uhash", self.seed)
-        self.hasher = HasherFactory.get("uhash", self.seed)
+        self.hasher = self.set_hash_seed(self.seed)
+
+    def set_hash_seed(self, seed):
+        self.hasher = HasherFactory.get("uhash", seed)
 
     def reset_parameters(self) -> None:
         # Setting a=sqrt(5) in kaiming_uniform is the same as initializing with
@@ -53,8 +59,8 @@ class SSL(nn.Module):
         x = ssl_linear(x, self.weight, self.hasher.random_numbers, self.redn_factor)
         
         ## fused
-        #if self.bias is not None:
-        #    x = x + self.bias
+        if self.bias is not None:
+            x = x + self.bias
         x = self.postprocess(x, original_shape)
         
         return x

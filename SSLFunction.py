@@ -10,14 +10,15 @@ from .SSL_Kernel.sketch_structured_linear.impl.SSLBackward import *
 
 import time
 
+from .block_sizes import BLOCK_SIZE_M, BLOCK_SIZE_N, BLOCK_SIZE_K
 
 controls = {}
 controls['triton_allow_tf32'] = False
 controls['triton_allow_autotune'] = False
 
-BLOCK_SIZE_M = 64
-BLOCK_SIZE_N = 64
-BLOCK_SIZE_K = 64
+#BLOCK_SIZE_M = 64
+#BLOCK_SIZE_N = 64
+#BLOCK_SIZE_K = 32
 
 class SketchStructuredLinearFunction(torch.autograd.Function):
              
