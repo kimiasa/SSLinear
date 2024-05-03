@@ -37,7 +37,7 @@ class SSL(nn.Module):
             self.register_parameter('bias', None)
         self.reset_parameters()
 
-        self.hasher = self.set_hash_seed(self.seed)
+        self.hasher = HasherFactory.get("uhash", seed)
 
     def set_hash_seed(self, seed):
         self.hasher = HasherFactory.get("uhash", seed)

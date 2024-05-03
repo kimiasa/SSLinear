@@ -45,13 +45,16 @@ class ModelParser:
     def run(self, name, model, state_dict):
         state_dict['model'] = model
         state_dict = self.lambda_init(state_dict)
-        for attr in dir(model):
-            target_attr = getattr(model, attr)
-            state_dict['target_attr'] = target_attr
-            state_dict['name'] = attr
-            state_dict['model'] = model
-            state_dict = self.lambda_func(state_dict)
+        #for attr in dir(model):
+        #    print(attr)
+        #    target_attr = getattr(model, attr)
+        #    state_dict['target_attr'] = target_attr
+        #    state_dict['name'] = attr
+        #    state_dict['model'] = model
+        #    state_dict = self.lambda_func(state_dict)
         for name, immediate_child_module in  model.named_children():
+            #import pdb
+            #pdb.set_trace()
             target_attr = immediate_child_module
             state_dict['target_attr'] = target_attr
             state_dict['name'] = name
@@ -142,6 +145,7 @@ class ModelRoastableParameters(ModelParser, Roastable):
         return state_dict
 
     def process(self):
+
         state_dict = {"compressable" : {}, "all" : {}}
         self.run("model", self.model, state_dict)
         
@@ -164,6 +168,7 @@ class ModelRoaster(ModelParser, Roastable):
     def __init__(self, model, redn_factor, module_limit_size=None, verbose=NONE):
         ModelParser.__init__(self)
         Roastable.__init__(self, module_limit_size=module_limit_size, verbose=verbose)
+
       
         self.verbose = verbose
 
