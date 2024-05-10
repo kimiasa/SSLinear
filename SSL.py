@@ -34,7 +34,6 @@ class SSL(nn.Module):
         self.reset_parameters()
 
         self.hasher = HasherFactory.get("uhash", self.seed)
-        self.hasher = HasherFactory.get("uhash", self.seed)
 
     def reset_parameters(self) -> None:
         # Setting a=sqrt(5) in kaiming_uniform is the same as initializing with
@@ -50,7 +49,7 @@ class SSL(nn.Module):
         original_shape = x.shape
         
         x = self.preprocess(x, original_shape)
-        x = ssl_linear(x, self.weight, self.hasher.random_numbers, self.redn_factor)
+        x = ssl_linear(x, self.weight, self.bias, self.hasher.random_numbers, self.redn_factor)
         
         ## fused
         #if self.bias is not None:

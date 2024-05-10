@@ -13,17 +13,17 @@ import time
 
 controls = {}
 controls['triton_allow_tf32'] = False
-controls['triton_allow_autotune'] = False
+controls['triton_allow_autotune'] = True
 
 BLOCK_SIZE_M = 64
-BLOCK_SIZE_N = 64
-BLOCK_SIZE_K = 64
+BLOCK_SIZE_N = 256
+BLOCK_SIZE_K = 32
 
 class SketchStructuredLinearFunction(torch.autograd.Function):
              
     @staticmethod
     @torch.cuda.amp.custom_fwd(cast_inputs=torch.float16)
-    def forward(ctx, input: torch.tensor, weight: torch.tensor,
+    def forward(ctx, input: torch.tensor, weight: torch.tensor, bias: torch.tensor,
                 random_numbers: torch.tensor, redn_factor: int) -> torch.tensor:  
 
         ctx._fwd_used_autocast = torch.is_autocast_enabled()
@@ -45,7 +45,7 @@ class SketchStructuredLinearFunction(torch.autograd.Function):
 
         batch_size, in_features, out_features= input.shape[0], input.shape[1], weight.shape[0]
 
-        output = ssl_forward_tl(input, weight.T.contiguous(), batch_size, in_features, out_features, redn_factor, R3, R2, R1, R0, 
+        output = ssl_forward_tl(input, weight.T.contiguous(), bias, batch_size, in_features, out_features, redn_factor, R3, R2, R1, R0, 
                                     BLOCK_SIZE_M=BLOCK_SIZE_M, BLOCK_SIZE_N=BLOCK_SIZE_N, BLOCK_SIZE_K=BLOCK_SIZE_K,
                                     allow_tf32=controls['triton_allow_tf32'], allow_autotune=controls['triton_allow_autotune'])
         
