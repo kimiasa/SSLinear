@@ -226,7 +226,7 @@ def ssl_backward_weight_grad_kernel(
         a_ptrs += BLOCK_SIZE_M * stride_am
         b_ptrs += BLOCK_SIZE_M * stride_bm
 
-    c = accumulator.to(tl.float16)
+    c = accumulator.to(c_ptr.dtype.element_ty)
     # -----------------------------------------------------------
     # Write back the block of the output matrix C
     # TODO check corner cases and masking
@@ -386,7 +386,7 @@ def ssl_backward_input_grad_kernel(
         a_ptrs += BLOCK_SIZE_N * stride_an
         b_ptrs += BLOCK_SIZE_N * stride_bn
 
-    c = accumulator.to(tl.float16)
+    c = accumulator.to(c_ptr.dtype.element_ty)
     # -----------------------------------------------------------
     # Write back the block of the output matrix C
     # [BLOCK_SIZE_M, BLOCK_SIZE_K]

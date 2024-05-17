@@ -306,7 +306,7 @@ def ssl_forward_core(
             a_ptrs += BLOCK_SIZE_K * stride_ak
             a = a0 + a1 + a2 + a3
         else:
-            a = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_K), dtype=tl.float16)
+            a = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_K), dtype=a_ptr.dtype.element_ty)
             for ck in range(0, redn_factor, num_stages=4):
                 IDX1 += R0
                 offset = ((((offs_k + (IDX + IDX1) * VEC)) % BLOCK_SIZE_K) * stride_ak)[None, :]
