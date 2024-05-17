@@ -16,11 +16,11 @@ default_dtype = torch.float16
 data_output_dir = "./results/"
 
 layer_types= [
-    #torch.nn.Linear,
+    torch.nn.Linear,
     SSL,
-    #MonarchLinear,
-    #BlockdiagButterflyLinear,
-    #LowRankLinear,
+    MonarchLinear,
+    BlockdiagButterflyLinear,
+    LowRankLinear,
     #BlockSparseLinear
 ]
 
