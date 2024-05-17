@@ -271,7 +271,7 @@ def ssl_forward_core(
     # We accumulate into a `[BLOCK_SIZE_M, BLOCK_SIZE_N]` block
     # of fp32 values for higher accuracy.
     # `accumulator` will be converted back to fp16 after the loop.
-    accumulator = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
+    accumulator = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=c_ptr.dtype.element_ty)
     IDX = (R3 + R2 * pid_n)
     for k in range(0, tl.cdiv(K, BLOCK_SIZE_K * redn_factor)):
         # Load the next block of A and B, generate a mask by checking the K dimension.

@@ -210,7 +210,7 @@ def ssl_backward_weight_grad_kernel(
         stride_bm + offs_bk[None, :] * stride_bk
 
     # [BLOCK_SIZE_N, BLOCK_SIZE_K]
-    accumulator = tl.zeros((BLOCK_SIZE_N, BLOCK_SIZE_K), dtype=tl.float32)
+    accumulator = tl.zeros((BLOCK_SIZE_N, BLOCK_SIZE_K), dtype=c_ptr.dtype.element_ty)
     for _ in range(0, tl.cdiv(M, BLOCK_SIZE_M)):
         if EVEN_M and EVEN_N:
             a = tl.load(a_ptrs)
@@ -365,7 +365,7 @@ def ssl_backward_input_grad_kernel(
     offs_k = tl.arange(0, BLOCK_SIZE_K)
 
     # [BLOCK_SIZE_M, BLOCK_SIZE_K]
-    accumulator = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_K), dtype=tl.float32)
+    accumulator = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_K), dtype=c_ptr.dtype.element_ty)
     for n in range(0, tl.cdiv(N, BLOCK_SIZE_N)):
         # Recompute IDX is better than use it as a loop carried variable
         IDX = R3 + R2 * n + R1 + R1 * pid_k_red
