@@ -16,16 +16,18 @@ default_dtype = torch.float16
 data_output_dir = "./results/"
 
 layer_types= [
-    torch.nn.Linear,
+    # torch.nn.Linear,
     SSL,
-    MonarchLinear,
-    BlockdiagButterflyLinear,
-    LowRankLinear,
+    # MonarchLinear,
+    # BlockdiagButterflyLinear,
+    # LowRankLinear,
     # BlockSparseLinear
 ]
 
-shapes = [(2**n, 2**n) for n in range(9,15)]
-batch_sizes = [1] + [2**n for n in range(7, 16)]
+shapes = [(2**n, 2**n) for n in range(10,15)]
+batch_sizes = [1, 8, 16, 32] + [2**n for n in range(7, 16)]
+# Skipping 8 due to compiler errors during autotune
+reduction_factors = [2, 4]
 
 
 def time_random_in_forward_cuda_event(model: nn.Module, input_shape, batch_size, generate_grad=False, warmup=True, repetitions=25):
@@ -61,7 +63,7 @@ def main(filepath):
         for shape in shapes:
             for layer_type in layer_types:
                 if layer_type == SSL:
-                    models = [(SSL(*shape, redn_factor=r, bias=True), f'SSL{r}x') for r in [2,4]]
+                    models = [(SSL(*shape, redn_factor=r, bias=True), f'SSL{r}x') for r in reduction_factors]
                 elif layer_type == LowRankLinear:
                     models = [(LowRankLinear(*shape, compression=0.5, bias=True), 'LowRankLinear0.5x')]
                 elif layer_type == nn.Linear:
