@@ -183,17 +183,18 @@ class MonarchLinear(StructuredLinear):
 
     def __init__(self, *args, nblocks=4, **kwargs):
         super().__init__(*args, **kwargs)
+        dtype = kwargs.get("dtype", torch.float)
         in_blksz = int(math.ceil(self.in_features / nblocks))
         out_blksz = int(math.ceil(self.out_features / nblocks))
         self.in_features_extended = in_blksz * nblocks
         self.out_features_extended = out_blksz * nblocks
         self.nblocks=nblocks
         if self.in_features_extended < self.out_features_extended:
-            self.blkdiag1 = nn.Parameter(torch.empty(nblocks, in_blksz, in_blksz))
-            self.blkdiag2 = nn.Parameter(torch.empty(nblocks, out_blksz, in_blksz))
+            self.blkdiag1 = nn.Parameter(torch.empty(nblocks, in_blksz, in_blksz, dtype=dtype))
+            self.blkdiag2 = nn.Parameter(torch.empty(nblocks, out_blksz, in_blksz, dtype=dtype))
         else:
-            self.blkdiag1 = nn.Parameter(torch.empty(nblocks, out_blksz, in_blksz))
-            self.blkdiag2 = nn.Parameter(torch.empty(nblocks, out_blksz, out_blksz))
+            self.blkdiag1 = nn.Parameter(torch.empty(nblocks, out_blksz, in_blksz, dtype=dtype))
+            self.blkdiag2 = nn.Parameter(torch.empty(nblocks, out_blksz, out_blksz, dtype=dtype))
         self.reset_parameters()
         print(f'Linear class {self.__class__}: saving={self.saving}')
 

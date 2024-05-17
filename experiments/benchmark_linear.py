@@ -16,18 +16,18 @@ default_dtype = torch.float16
 data_output_dir = "./results/"
 
 layer_types= [
-    # torch.nn.Linear,
+    #torch.nn.Linear,
     SSL,
-    # MonarchLinear,
-    # BlockdiagButterflyLinear,
-    # LowRankLinear,
-    # BlockSparseLinear
+    #MonarchLinear,
+    #BlockdiagButterflyLinear,
+    #LowRankLinear,
+    #BlockSparseLinear
 ]
 
 shapes = [(2**n, 2**n) for n in range(9,15)]
-batch_sizes = [8, 16, 32] + [2**n for n in range(7, 16)]
+batch_sizes = [2**n for n in range(7, 16)]
 # Skipping 8 due to compiler errors during autotune
-reduction_factors = [1, 2, 4, 8]
+reduction_factors = [1, 2, 4, 8, 16]
 
 
 def time_random_in_forward_cuda_event(model: nn.Module, input_shape, batch_size, generate_grad=False, warmup=True, repetitions=25):

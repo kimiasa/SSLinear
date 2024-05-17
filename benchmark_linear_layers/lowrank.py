@@ -4,7 +4,7 @@ from pytorch_block_sparse import BlockSparseLinear
 import numpy as np
 
 class LowRankLinear(nn.Module):
-    def __init__(self, input, output, compression, bias):
+    def __init__(self, input, output, compression, bias, dtype=torch.float):
         super(LowRankLinear, self).__init__()
         self.idim = input
         self.odim = output
@@ -15,14 +15,14 @@ class LowRankLinear(nn.Module):
         self.intermediate_dim = int(2** np.round(np.log2(self.intermediate_dim)))
         
         assert(self.intermediate_dim > 0)
-        self.w1 = nn.Parameter(torch.zeros((self.idim, self.intermediate_dim), dtype=torch.float), requires_grad=True)
-        self.w2 = nn.Parameter(torch.zeros((self.intermediate_dim, self.odim), dtype=torch.float), requires_grad=True)
+        self.w1 = nn.Parameter(torch.zeros((self.idim, self.intermediate_dim), dtype=dtype), requires_grad=True)
+        self.w2 = nn.Parameter(torch.zeros((self.intermediate_dim, self.odim), dtype=dtype), requires_grad=True)
         nn.init.normal_(self.w1.data)
         nn.init.normal_(self.w2.data)
         self.bias = None
         if bias:
             self.bias = nn.Parameter(torch.zeros(
-                self.odim, dtype=torch.float), requires_grad=True)
+                self.odim, dtype=dtype), requires_grad=True)
         self.init_weight()
 
     def init_weight(self):
