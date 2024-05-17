@@ -13,7 +13,7 @@ import time
 from .block_sizes import BLOCK_SIZE_M, BLOCK_SIZE_N, BLOCK_SIZE_K
 
 controls = {}
-controls['triton_allow_tf32'] = False
+controls['triton_allow_tf32'] = True
 controls['triton_allow_autotune'] = True
 
 BLOCK_SIZE_M = 64
@@ -46,9 +46,9 @@ class SketchStructuredLinearFunction(torch.autograd.Function):
 
         batch_size, in_features, out_features= input.shape[0], input.shape[1], weight.shape[0]
 
-        output = ssl_forward_tl(input, weight.T.contiguous(), bias, batch_size, in_features, out_features, redn_factor, R3, R2, R1, R0, 
-                                    BLOCK_SIZE_M=BLOCK_SIZE_M, BLOCK_SIZE_N=BLOCK_SIZE_N, BLOCK_SIZE_K=BLOCK_SIZE_K,
-                                    allow_tf32=controls['triton_allow_tf32'], allow_autotune=controls['triton_allow_autotune'])
+        output = ssl_forward_tl(input, weight.T, bias, batch_size, in_features, out_features, redn_factor, R3, R2, R1, R0, 
+                                BLOCK_SIZE_M=BLOCK_SIZE_M, BLOCK_SIZE_N=BLOCK_SIZE_N, BLOCK_SIZE_K=BLOCK_SIZE_K,
+                                allow_tf32=controls['triton_allow_tf32'], allow_autotune=controls['triton_allow_autotune'])
         
         ctx.save_for_backward(input, weight, random_numbers)
         ctx.redn_factor = redn_factor
@@ -73,8 +73,8 @@ class SketchStructuredLinearFunction(torch.autograd.Function):
             M, K, N= input.shape[0], input.shape[1], weight.shape[0]
 
             input_grad, weight_grad = ssl_backward_tl(input.contiguous(), weight, grad.contiguous(), M, K, N, redn_factor, R3, R2, R1,
-                                                        R0, allow_tf32=controls['triton_allow_tf32'],
-                                                        BLOCK_SIZE_M=BLOCK_SIZE_M, BLOCK_SIZE_N=BLOCK_SIZE_N, BLOCK_SIZE_K=BLOCK_SIZE_K)
+                                                      R0, allow_tf32=controls['triton_allow_tf32'],
+                                                      BLOCK_SIZE_M=BLOCK_SIZE_M, BLOCK_SIZE_N=BLOCK_SIZE_N, BLOCK_SIZE_K=BLOCK_SIZE_K)
         
             #bias_grad = None
             #if ctx.needs_input_grad[2]:
