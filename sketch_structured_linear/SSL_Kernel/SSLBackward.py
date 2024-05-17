@@ -221,7 +221,7 @@ def ssl_backward_weight_grad_kernel(
             a = tl.load(a_ptrs, mask=a_mask, other=0.0)
             b = tl.load(b_ptrs, mask=b_mask, other=0.0)
         # We accumulate along the M dimension
-        accumulator += tl.dot(a, b, allow_tf32=allow_tf32)
+        accumulator += tl.dot(a, b, allow_tf32=allow_tf32, out_dtype=c_ptr.dtype.element_ty)
         # Advance the ptrs to the next M block
         a_ptrs += BLOCK_SIZE_M * stride_am
         b_ptrs += BLOCK_SIZE_M * stride_bm
@@ -381,7 +381,7 @@ def ssl_backward_input_grad_kernel(
 
         b = tl.load(b_ptrs + offs_bk[None, :] * stride_bk)
         # We accumulate along the N dimension
-        accumulator += tl.dot(a, b, allow_tf32=allow_tf32)
+        accumulator += tl.dot(a, b, allow_tf32=allow_tf32, out_dtype=c_ptr.dtype.element_ty)
         # Advance the ptrs to the next N block
         a_ptrs += BLOCK_SIZE_N * stride_an
         b_ptrs += BLOCK_SIZE_N * stride_bn

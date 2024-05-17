@@ -322,7 +322,7 @@ def ssl_forward_core(
             b = tl.load(b_ptrs, mask=offs_k[:, None] < (K // redn_factor) - k * BLOCK_SIZE_K, other=0.0)
         # We accumulate along the K dimension.
 
-        accumulator += tl.dot(a, b, allow_tf32=allow_tf32)
+        accumulator += tl.dot(a, b, allow_tf32=allow_tf32, out_dtype=c_ptr.dtype.element_ty)
         # Advance the ptrs to the next K block.
         b_ptrs += BLOCK_SIZE_K * stride_bk
     # You can fuse arbitrary activation functions here
