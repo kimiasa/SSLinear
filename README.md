@@ -38,3 +38,20 @@ Saves results to `results.csv`
 ```sh
 python experiments/benchmark_linear.py -f ./outfile.csv
 ```
+
+Be sure to modify the following as necessary in the script
+```
+layer_types= [
+    # torch.nn.Linear,
+    SSL,
+    # MonarchLinear,
+    # BlockdiagButterflyLinear,
+    # LowRankLinear,
+    # BlockSparseLinear
+]
+
+shapes = [(2**n, 2**n) for n in range(9,15)]
+batch_sizes = [8, 16, 32] + [2**n for n in range(7, 16)]
+# Skipping 8 due to compiler errors during autotune
+reduction_factors = [2, 4]
+```

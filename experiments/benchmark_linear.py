@@ -24,8 +24,8 @@ layer_types= [
     # BlockSparseLinear
 ]
 
-shapes = [(2**n, 2**n) for n in range(10,15)]
-batch_sizes = [1, 8, 16, 32] + [2**n for n in range(7, 16)]
+shapes = [(2**n, 2**n) for n in range(9,15)]
+batch_sizes = [8, 16, 32] + [2**n for n in range(7, 16)]
 # Skipping 8 due to compiler errors during autotune
 reduction_factors = [2, 4]
 
