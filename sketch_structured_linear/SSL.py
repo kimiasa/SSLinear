@@ -17,7 +17,7 @@ class SSL(nn.Module):
                  redn_factor: int = 2, seed: int = 1024,
                  device=None, dtype=None) -> None:
         factory_kwargs = {'device': device, 'dtype': dtype}
-        super(SSL, self).__init__()
+        super().__init__()
 
         assert redn_factor > 0 and (redn_factor & (redn_factor - 1)) == 0 # reduction factor should be power of 2
         self.redn_factor = redn_factor
@@ -37,10 +37,7 @@ class SSL(nn.Module):
             self.register_parameter('bias', None)
         self.reset_parameters()
 
-        self.hasher = HasherFactory.get("uhash", seed)
-
-    def set_hash_seed(self, seed):
-        self.hasher = HasherFactory.get("uhash", seed)
+        self.hasher = HasherFactory.get("uhash", self.seed)
 
     def reset_parameters(self) -> None:
         # Setting a=sqrt(5) in kaiming_uniform is the same as initializing with
@@ -56,7 +53,7 @@ class SSL(nn.Module):
         original_shape = x.shape
         
         x = self.preprocess(x, original_shape)
-        x = ssl_linear(x, self.weight, self.hasher.random_numbers, self.redn_factor)
+        x = ssl_linear(x, self.weight, self.bias, self.hasher.random_numbers, self.redn_factor)
         
         ## fused
         if self.bias is not None:

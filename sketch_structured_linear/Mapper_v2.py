@@ -37,7 +37,7 @@ class UHasher(Hasher):
     def __init__(self, seed, P=92387, **kwargs):
         super(UHasher, self).__init__(seed)
         self.P = P
-        self.gen = torch.Generator()
+        self.gen = torch.Generator(device=torch.get_default_device())
         self.gen.manual_seed(self.seed)
         print("Hashing using seed", seed)
 

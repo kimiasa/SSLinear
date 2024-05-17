@@ -2,14 +2,9 @@ import torch
 import torch.nn as nn
 from math import sqrt
 
-try:
-    from .SketchStructuredLinear import SketchStructuredLinear
-    from .SSLFunction import SketchStructuredLinearFunction
-    from .Mapper_v2 import *
-except:
-    from SketchStructuredLinear import SketchStructuredLinear
-    from SSLFunction import SketchStructuredLinearFunction
-    from Mapper_v2 import *
+from .SketchStructuredLinear import SketchStructuredLinear
+from .SSLFunction import SketchStructuredLinearFunction
+from .Mapper_v2 import *
 
 
 

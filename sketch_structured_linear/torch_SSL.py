@@ -6,7 +6,7 @@ try:
     from .SketchStructuredLinear import SketchStructuredLinear
     from .Mapper_v2 import *
 except:
-    from SketchStructuredLinear import SketchStructuredLinear 
+    from SSLinear.src.sslinear.SketchStructuredLinear import SketchStructuredLinear 
     from Mapper_v2 import *
 
     
