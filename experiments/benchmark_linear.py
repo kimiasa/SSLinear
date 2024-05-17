@@ -29,6 +29,15 @@ batch_sizes = [2**n for n in range(7, 16)]
 # Skipping 8 due to compiler errors during autotune
 reduction_factors = [1, 2, 4, 8, 16]
 
+def count_parameters(model):    
+    total_params = 0
+    for _, parameter in model.named_parameters():
+        if not parameter.requires_grad:
+            continue
+        params = parameter.numel()
+        total_params += params
+    # print(f"Total Trainable Params: {total_params}")
+    return total_params
 
 def time_random_in_forward_cuda_event(model: nn.Module, input_shape, batch_size, generate_grad=False, warmup=True, repetitions=25):
     timings = []
@@ -65,9 +74,11 @@ def main(filepath):
                 if layer_type == SSL:
                     models = [(SSL(*shape, redn_factor=r, bias=True, dtype=default_dtype), f'SSL{r}x') for r in reduction_factors]
                 elif layer_type == LowRankLinear:
-                    models = [(LowRankLinear(*shape, compression=0.5, bias=True, dtype=default_dtype), 'LowRankLinear0.5x')]
+                    models = [(LowRankLinear(*shape, compression=1.0/r, bias=True, dtype=default_dtype), f'LowRankLinear1/{r}x') for r in reduction_factors]
                 elif layer_type == nn.Linear:
                     models = [(nn.Linear(*shape, device='cuda', bias=True, dtype=default_dtype), 'nnLinear')]
+                elif layer_type == MonarchLinear:
+                    models = [(MonarchLinear(*shape, nblocks=r*2, bias=True, dtype=default_dtype), f'Monarch{r*2}b') for r in reduction_factors]
                 else:
                     models= [(layer_type(*shape, device='cuda', bias=True, dtype=default_dtype), f'{layer_type.__name__}')]
                 for model, label in models:
@@ -78,16 +89,20 @@ def main(filepath):
                         batch_size = batch_size,
                         repetitions = 100
                     )
+
+                    num_params = count_parameters(model)
                     new_data = {
                         'model': [label],
                         'shape': [shape],
                         'batch': [batch_size],
+                        'num_params': num_params,
                         'avg_time_ms': [avg_time],
                         'std_dev_ms': [std_dev],
                     }
                     new_df = pd.DataFrame(new_data)
                     save_to_csv(new_df, filepath)
-                    print(f'{label} shape:{shape} batch:{batch_size} {avg_time:3f} ms +- {std_dev:2f}')
+                    
+                    print(f'{label} shape:{shape} batch:{batch_size} num_params: {num_params} {avg_time:3f} ms +- {std_dev:2f}')
 
 if __name__ == "__main__":
     torch.backends.cuda.matmul.allow_tf32 = True
