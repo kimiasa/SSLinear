@@ -27,7 +27,7 @@ layer_types= [
 shapes = [(2**n, 2**n) for n in range(9,15)]
 batch_sizes = [8, 16, 32] + [2**n for n in range(7, 16)]
 # Skipping 8 due to compiler errors during autotune
-reduction_factors = [2, 4]
+reduction_factors = [1, 2, 4, 8]
 
 
 def time_random_in_forward_cuda_event(model: nn.Module, input_shape, batch_size, generate_grad=False, warmup=True, repetitions=25):
@@ -35,13 +35,13 @@ def time_random_in_forward_cuda_event(model: nn.Module, input_shape, batch_size,
     full_shape = (batch_size, *input_shape)
     if warmup:
         for _ in range(2):
-            x = torch.rand(*full_shape)
+            x = torch.rand(*full_shape, dtype=default_dtype)
             _ = model(x)
     torch.cuda.synchronize()
 
     starter, ender = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
     for _ in range(repetitions):
-        x = torch.rand(*full_shape)
+        x = torch.rand(*full_shape, dtype=default_dtype)
 
         if generate_grad:
             starter.record()
@@ -63,13 +63,13 @@ def main(filepath):
         for shape in shapes:
             for layer_type in layer_types:
                 if layer_type == SSL:
-                    models = [(SSL(*shape, redn_factor=r, bias=True), f'SSL{r}x') for r in reduction_factors]
+                    models = [(SSL(*shape, redn_factor=r, bias=True, dtype=default_dtype), f'SSL{r}x') for r in reduction_factors]
                 elif layer_type == LowRankLinear:
-                    models = [(LowRankLinear(*shape, compression=0.5, bias=True), 'LowRankLinear0.5x')]
+                    models = [(LowRankLinear(*shape, compression=0.5, bias=True, dtype=default_dtype), 'LowRankLinear0.5x')]
                 elif layer_type == nn.Linear:
-                    models = [(nn.Linear(*shape, device='cuda', bias=True), 'nnLinear')]
+                    models = [(nn.Linear(*shape, device='cuda', bias=True, dtype=default_dtype), 'nnLinear')]
                 else:
-                    models= [(layer_type(*shape, device='cuda', bias=True), f'{layer_type.__name__}')]
+                    models= [(layer_type(*shape, device='cuda', bias=True, dtype=default_dtype), f'{layer_type.__name__}')]
                 for model, label in models:
                     print(f'Starting {label} shape:{shape} batch:{batch_size}')
                     avg_time, std_dev = time_random_in_forward_cuda_event(
@@ -90,8 +90,8 @@ def main(filepath):
                     print(f'{label} shape:{shape} batch:{batch_size} {avg_time:3f} ms +- {std_dev:2f}')
 
 if __name__ == "__main__":
-    torch.backends.cuda.matmul.allow_tf32 = False
-    torch.set_default_device(f'cuda')
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.set_default_device('cuda')
     torch.set_default_dtype = default_dtype
     torch.cuda.set_device(device_index)
     torch.manual_seed(seed)
@@ -114,3 +114,4 @@ if __name__ == "__main__":
     else:
         print("No file path provided.")
     main(file_path)
+
