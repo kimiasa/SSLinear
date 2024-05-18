@@ -13,6 +13,8 @@ class LowRankLinear(nn.Module):
         
         # power of 2
         self.intermediate_dim = int(2** np.round(np.log2(self.intermediate_dim)))
+        if self.intermediate_dim > self.idim:
+            self.intermediate_dim = self.intermediate_dim // 2
         
         assert(self.intermediate_dim > 0)
         self.w1 = nn.Parameter(torch.zeros((self.idim, self.intermediate_dim), dtype=dtype), requires_grad=True)
@@ -46,8 +48,6 @@ class LowRankLinear(nn.Module):
 
     def wt_orig_to_comp(self, W):
         # orig is (out,in)
-        input = W.T.shape[0]
-        output = W.T.shape[1]
         U,S,Vh = torch.svd_lowrank(W.T, q=self.intermediate_dim, niter=10)
         B = torch.matmul(U, torch.sqrt(torch.diag(S)))
         C = torch.matmul(Vh, torch.sqrt(torch.diag(S)))

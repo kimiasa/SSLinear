@@ -16,16 +16,16 @@ default_dtype = torch.float16
 data_output_dir = "./results/"
 
 layer_types= [
+    LowRankLinear,
     torch.nn.Linear,
     SSL,
     MonarchLinear,
     BlockdiagButterflyLinear,
-    LowRankLinear,
     #BlockSparseLinear
 ]
 
-shapes = [(2**n, 2**n) for n in range(9,15)]
-batch_sizes = [2**n for n in range(7, 16)]
+shapes = [(768, 3072), (3072, 768), (768, 2304), (768, 768), (768, 50256)]
+batch_sizes = [36864,12288]
 # Skipping 8 due to compiler errors during autotune
 reduction_factors = [1, 2, 4, 8, 16]
 
@@ -85,7 +85,7 @@ def main(filepath):
                     print(f'Starting {label} shape:{shape} batch:{batch_size}')
                     avg_time, std_dev = time_random_in_forward_cuda_event(
                         model = model,
-                        input_shape = (shape[1],),
+                        input_shape = (shape[0],),
                         batch_size = batch_size,
                         repetitions = 100
                     )
