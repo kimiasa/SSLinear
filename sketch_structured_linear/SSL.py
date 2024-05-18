@@ -54,10 +54,6 @@ class SSL(nn.Module):
         
         x = self.preprocess(x, original_shape)
         x = ssl_linear(x, self.weight, self.bias, self.hasher.random_numbers, self.redn_factor)
-        
-        ## fused
-        if self.bias is not None:
-            x = x + self.bias
         x = self.postprocess(x, original_shape)
         
         return x
