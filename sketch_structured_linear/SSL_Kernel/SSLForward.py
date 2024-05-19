@@ -1,6 +1,7 @@
 import torch
 import triton
 import triton.language as tl
+from triton.runtime import driver
 from typing import NamedTuple
 import argparse
 
@@ -89,9 +90,21 @@ def ssl_forward_tl(input: torch.tensor, weight: torch.tensor, bias: torch.tensor
 
 
 def _generate_configs():
-    BLOCK_SIZE_M = [16, 32, 64, 128, 256]
-    BLOCK_SIZE_N = [16, 32, 64, 128, 256]
-    BLOCK_SIZE_K = [16, 32, 64]
+    device = torch.cuda.current_device()
+    capability = torch.cuda.get_device_capability(device)
+    cap = capability[0] * 10 + capability[1]
+    if cap == 90:
+        BLOCK_SIZE_M = [32, 64, 128, 256]
+        BLOCK_SIZE_N = [32, 64, 128, 256]
+        BLOCK_SIZE_K = [16, 32, 64]
+    elif cap == 89:
+        BLOCK_SIZE_M = [16, 32, 64, 128]
+        BLOCK_SIZE_N = [16, 32, 64, 128]
+        BLOCK_SIZE_K = [16, 32, 64]
+    else:
+        BLOCK_SIZE_M = [16, 32, 64, 128, 256]
+        BLOCK_SIZE_N = [16, 32, 64, 128, 256]
+        BLOCK_SIZE_K = [16, 32, 64]
     configs = []
     for bm in BLOCK_SIZE_M:
         for bn in BLOCK_SIZE_N:
@@ -103,20 +116,34 @@ def _generate_configs():
 
 
 def _early_config_prune(configs, named_args, **kwargs):
+    device = torch.cuda.current_device()
+    capability = torch.cuda.get_device_capability(device)
+    cap = capability[0] * 10 + capability[1]
+    max_shared_mem = driver.active.utils.get_device_properties(device)["max_shared_mem"]
     pruned_configs = []
     K = named_args['K']
+    element_size = named_args['a_ptr'].element_size()
+    redn_factor = kwargs['redn_factor']
     for config in configs:
-        if K % (config.kwargs['BLOCK_SIZE_K'] * kwargs['redn_factor']) != 0:
+        BLOCK_SIZE_K = config.kwargs['BLOCK_SIZE_K']
+        BLOCK_SIZE_M = config.kwargs['BLOCK_SIZE_M']
+        BLOCK_SIZE_N = config.kwargs['BLOCK_SIZE_N']
+        num_stages = config.num_stages
+        if K % (BLOCK_SIZE_K * redn_factor) != 0:
             continue
         if (K < 1024 and (config.kwargs['BLOCK_SIZE_K'] > 32 and config.num_stages > 3)) or (K >= 1024 and config.num_stages < 4):
-            # prefer smaller num_stages for large K
-            # prefer larger num_stages for small K
             continue
         if config.kwargs['BLOCK_SIZE_M'] == 256 and config.kwargs['BLOCK_SIZE_N'] == 256:
             # avoid large block sizes
             continue
         if config.kwargs['BLOCK_SIZE_K'] == 16 and K % (32 * kwargs['redn_factor']) == 0:
             # small block size k is only considered when larger block size is not possible
+            continue
+        if cap >= 80 and redn_factor <= 4:
+            estimated_shared_mem = redn_factor * num_stages * (BLOCK_SIZE_K * BLOCK_SIZE_M + BLOCK_SIZE_K * BLOCK_SIZE_N) * element_size
+        else:
+            estimated_shared_mem = num_stages * (BLOCK_SIZE_K * BLOCK_SIZE_M + BLOCK_SIZE_K * BLOCK_SIZE_N) * element_size
+        if estimated_shared_mem > max_shared_mem:
             continue
         pruned_configs.append(config)
     return pruned_configs
