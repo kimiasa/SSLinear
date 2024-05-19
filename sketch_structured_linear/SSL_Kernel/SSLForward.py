@@ -89,8 +89,8 @@ def ssl_forward_tl(input: torch.tensor, weight: torch.tensor, bias: torch.tensor
 
 
 def _generate_configs():
-    BLOCK_SIZE_M = [64, 128, 256]
-    BLOCK_SIZE_N = [64, 128, 256]
+    BLOCK_SIZE_M = [16, 32, 64, 128, 256]
+    BLOCK_SIZE_N = [16, 32, 64, 128, 256]
     BLOCK_SIZE_K = [16, 32, 64]
     configs = []
     for bm in BLOCK_SIZE_M:

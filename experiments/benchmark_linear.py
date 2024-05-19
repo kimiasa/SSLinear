@@ -25,8 +25,18 @@ layer_types= [
 ]
 
 shapes = [(2**n, 2**n) for n in range(9,15)]
-batch_sizes = [2**n for n in range(7, 16)]
-# Skipping 8 due to compiler errors during autotune
+batch_sizes = [2**n for n in range(15, 16)]
+
+shapes_of_interest = [
+    (1024, 1024, 1024),
+    (16384, 1024, 1024),
+    (32768, 1024, 1024),
+    (36864, 3072, 768),
+    (36864, 768, 3072),
+    (12288, 2304, 768),
+    (36864, 768, 768),
+    (12288, 50256, 768),
+]
 reduction_factors = [1, 2, 4, 8, 16]
 
 def count_parameters(model):    
@@ -38,6 +48,32 @@ def count_parameters(model):
         total_params += params
     # print(f"Total Trainable Params: {total_params}")
     return total_params
+
+def time_random_in_forward_proton(model, input_shape, batch_size, generate_grad=False, warmup=True, repetitions=25):
+    import triton.profiler as proton
+
+    timings = []
+    full_shape = (batch_size, *input_shape)
+    if warmup:
+        for _ in range(2):
+            x = torch.rand(*full_shape, dtype=default_dtype)
+            _ = model(x)
+
+    session_id = proton.start(name="profile_name", context="python")
+    proton.deactivate(session_id)
+    for _ in range(repetitions):
+        x = torch.rand(*full_shape, dtype=default_dtype)
+
+        if generate_grad:
+            _ = model(x)
+
+        else:
+            with torch.no_grad():
+                proton.activate(session_id)
+                _ = model(x)
+                proton.deactivate(session_id)
+
+    return np.sum(timings) / repetitions, np.std(timings) / repetitions
 
 def time_random_in_forward_cuda_event(model: nn.Module, input_shape, batch_size, generate_grad=False, warmup=True, repetitions=25):
     timings = []
@@ -67,42 +103,56 @@ def time_random_in_forward_cuda_event(model: nn.Module, input_shape, batch_size,
         timings.append(starter.elapsed_time(ender))
     return np.sum(timings) / repetitions, np.std(timings) / repetitions
 
-def main(filepath):
+def profile_all_layers(batch_size, shape):
+    df = pd.DataFrame()
+    for layer_type in layer_types:
+        if layer_type == SSL:
+            models = [(SSL(*shape, redn_factor=r, bias=True, dtype=default_dtype), f'SSL{r}x') for r in reduction_factors]
+        elif layer_type == LowRankLinear:
+            models = [(LowRankLinear(*shape, compression=1.0/r, bias=True, dtype=default_dtype), f'LowRankLinear1/{r}x') for r in reduction_factors]
+        elif layer_type == nn.Linear:
+            models = [(nn.Linear(*shape, device='cuda', bias=True, dtype=default_dtype), 'nnLinear')]
+        elif layer_type == MonarchLinear:
+            models = [(MonarchLinear(*shape, nblocks=r*2, bias=True, dtype=default_dtype), f'Monarch{r*2}b') for r in reduction_factors]
+        else:
+            models= [(layer_type(*shape, device='cuda', bias=True, dtype=default_dtype), f'{layer_type.__name__}')]
+        for model, label in models:
+            print(f'Starting {label} shape:{shape}')
+            avg_time, std_dev = time_random_in_forward_cuda_event(
+                model = model,
+                input_shape = (shape[0],),
+                batch_size = batch_size,
+                repetitions = 100
+            )
+
+            num_params = count_parameters(model)
+            new_data = {
+                'model': [label],
+                'shape': [(batch_size, shape[0], shape[1])],
+                'num_params': num_params,
+                'avg_time_ms': [avg_time],
+                'std_dev_ms': [std_dev],
+            }
+            print(f'{label} shape:{shape} num_params: {num_params} {avg_time:3f} ms +- {std_dev:2f}')
+            df = pd.concat([df, pd.DataFrame(new_data)])
+
+    return df
+        
+def profile_square(filepath):
     for batch_size in batch_sizes:
         for shape in shapes:
-            for layer_type in layer_types:
-                if layer_type == SSL:
-                    models = [(SSL(*shape, redn_factor=r, bias=True, dtype=default_dtype), f'SSL{r}x') for r in reduction_factors]
-                elif layer_type == LowRankLinear:
-                    models = [(LowRankLinear(*shape, compression=1.0/r, bias=True, dtype=default_dtype), f'LowRankLinear1/{r}x') for r in reduction_factors]
-                elif layer_type == nn.Linear:
-                    models = [(nn.Linear(*shape, device='cuda', bias=True, dtype=default_dtype), 'nnLinear')]
-                elif layer_type == MonarchLinear:
-                    models = [(MonarchLinear(*shape, nblocks=r*2, bias=True, dtype=default_dtype), f'Monarch{r*2}b') for r in reduction_factors]
-                else:
-                    models= [(layer_type(*shape, device='cuda', bias=True, dtype=default_dtype), f'{layer_type.__name__}')]
-                for model, label in models:
-                    print(f'Starting {label} shape:{shape} batch:{batch_size}')
-                    avg_time, std_dev = time_random_in_forward_cuda_event(
-                        model = model,
-                        input_shape = (shape[1],),
-                        batch_size = batch_size,
-                        repetitions = 100
-                    )
+            save_to_csv(profile_all_layers(batch_size, shape), filepath)
 
-                    num_params = count_parameters(model)
-                    new_data = {
-                        'model': [label],
-                        'shape': [shape],
-                        'batch': [batch_size],
-                        'num_params': num_params,
-                        'avg_time_ms': [avg_time],
-                        'std_dev_ms': [std_dev],
-                    }
-                    new_df = pd.DataFrame(new_data)
-                    save_to_csv(new_df, filepath)
-                    
-                    print(f'{label} shape:{shape} batch:{batch_size} num_params: {num_params} {avg_time:3f} ms +- {std_dev:2f}')
+def profile_target(filepath):
+    for shape in shapes_of_interest:
+        save_to_csv(profile_all_layers(shape[0], (shape[1], shape[2])), filepath)
+
+def main(target, square, filepath):
+    if target:
+        profile_target(filepath)
+    if square:
+        profile_square(file_path)
+
 
 if __name__ == "__main__":
     torch.backends.cuda.matmul.allow_tf32 = True
@@ -116,6 +166,9 @@ if __name__ == "__main__":
 
     # Add an optional argument for the file path
     parser.add_argument('-f', '--file', type=str, help='The path to the output csv file')
+    parser.add_argument('--square', action='store_true', help='A flag for benchmarking square shapes')
+    parser.add_argument('--paper', action='store_true', help='A flag for benchmarking shapes of interest for the paper')
+    parser.add_argument('--proton', action='store_true', help='A flag for using proton instead of cuda events')
 
     # Parse the command-line arguments
     args = parser.parse_args()
@@ -128,5 +181,5 @@ if __name__ == "__main__":
         print(f"The provided file path is: {file_path}")
     else:
         print("No file path provided.")
-    main(file_path)
+    main(args.paper, args.square, file_path)
 
