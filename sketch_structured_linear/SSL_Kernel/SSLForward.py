@@ -139,8 +139,17 @@ def _early_config_prune(configs, named_args, **kwargs):
         if config.kwargs['BLOCK_SIZE_K'] == 16 and K % (32 * kwargs['redn_factor']) == 0:
             # small block size k is only considered when larger block size is not possible
             continue
-        if cap >= 80 and redn_factor <= 4:
-            estimated_shared_mem = redn_factor * num_stages * (BLOCK_SIZE_K * BLOCK_SIZE_M + BLOCK_SIZE_K * BLOCK_SIZE_N) * element_size
+        if cap >= 80:
+            if redn_factor >= 8:
+                # inner pipeline = 4
+                estimated_shared_mem = (4 * BLOCK_SIZE_K * BLOCK_SIZE_M + num_stages * BLOCK_SIZE_K * BLOCK_SIZE_N) * element_size
+            elif redn_factor >= 4:
+                # inner pipeline = 3
+                estimated_shared_mem = (3 * BLOCK_SIZE_K * BLOCK_SIZE_M + num_stages * BLOCK_SIZE_K * BLOCK_SIZE_N) * element_size
+            elif redn_factor >= 2:
+                estimated_shared_mem = (2 * BLOCK_SIZE_K * BLOCK_SIZE_M + num_stages * BLOCK_SIZE_K * BLOCK_SIZE_N) * element_size
+            else:
+                estimated_shared_mem = (num_stages * BLOCK_SIZE_K * BLOCK_SIZE_M + num_stages * BLOCK_SIZE_K * BLOCK_SIZE_N) * element_size
         else:
             estimated_shared_mem = num_stages * (BLOCK_SIZE_K * BLOCK_SIZE_M + BLOCK_SIZE_K * BLOCK_SIZE_N) * element_size
         if estimated_shared_mem > max_shared_mem:
@@ -245,6 +254,24 @@ def ssl_acc_a(
             k * redn_factor + ck) * BLOCK_SIZE_K, other=0.0)
     return a
 
+@triton.jit
+def ssl_pipeline_a(
+    offs_k, IDX, IDX1,
+    stride_ak, k, a_ptrs, a_ptr,
+    R0: tl.constexpr, VEC: tl.constexpr, BLOCK_SIZE_M: tl.constexpr, BLOCK_SIZE_K: tl.constexpr, redn_factor: tl.constexpr, EVEN_K: tl.constexpr, K: tl.constexpr, num_stages: tl.constexpr
+):
+    a = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_K), dtype=a_ptr.dtype.element_ty)
+    for ck in tl.range(0, redn_factor, num_stages=num_stages):
+        IDX1 += R0
+        offset = ((((offs_k + (IDX + IDX1) * VEC)) % BLOCK_SIZE_K) * stride_ak)[None, :]
+        if EVEN_K:
+            a += tl.load(a_ptrs + offset)
+        else:
+            a += tl.load(a_ptrs + offset, mask=offset < K - (
+                k * redn_factor + ck) * BLOCK_SIZE_K, other=0.0)
+        a_ptrs += BLOCK_SIZE_K * stride_ak
+    return a
+
 
 @triton.jit
 def ssl_forward_core(
@@ -319,30 +346,9 @@ def ssl_forward_core(
             a_ptrs += BLOCK_SIZE_K * stride_ak
             a = a0 + a1
         elif redn_factor == 4:
-            IDX1 += R0
-            a0 = ssl_acc_a(offs_k, IDX, IDX1, stride_ak, 0, k, a_ptrs, VEC, BLOCK_SIZE_K, redn_factor, EVEN_K, K)
-            a_ptrs += BLOCK_SIZE_K * stride_ak
-            IDX1 += R0
-            a1 = ssl_acc_a(offs_k, IDX, IDX1, stride_ak, 1, k, a_ptrs, VEC, BLOCK_SIZE_K, redn_factor, EVEN_K, K)
-            a_ptrs += BLOCK_SIZE_K * stride_ak
-            IDX1 += R0
-            a2 = ssl_acc_a(offs_k, IDX, IDX1, stride_ak, 2, k, a_ptrs, VEC, BLOCK_SIZE_K, redn_factor, EVEN_K, K)
-            a_ptrs += BLOCK_SIZE_K * stride_ak
-            IDX1 += R0
-            a3 = ssl_acc_a(offs_k, IDX, IDX1, stride_ak, 3, k, a_ptrs, VEC, BLOCK_SIZE_K, redn_factor, EVEN_K, K)
-            a_ptrs += BLOCK_SIZE_K * stride_ak
-            a = a0 + a1 + a2 + a3
+            a = ssl_pipeline_a(offs_k, IDX, IDX1, stride_ak, k, a_ptrs, a_ptr, R0, VEC, BLOCK_SIZE_M, BLOCK_SIZE_K, redn_factor, EVEN_K, K, 3)
         else:
-            a = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_K), dtype=a_ptr.dtype.element_ty)
-            for ck in range(0, redn_factor, num_stages=4):
-                IDX1 += R0
-                offset = ((((offs_k + (IDX + IDX1) * VEC)) % BLOCK_SIZE_K) * stride_ak)[None, :]
-                if EVEN_K:
-                    a += tl.load(a_ptrs + offset)
-                else:
-                    a += tl.load(a_ptrs + offset, mask=offset < K - (
-                        k * redn_factor + ck) * BLOCK_SIZE_K, other=0.0)
-                a_ptrs += BLOCK_SIZE_K * stride_ak
+            a = ssl_pipeline_a(offs_k, IDX, IDX1, stride_ak, k, a_ptrs, a_ptr, R0, VEC, BLOCK_SIZE_M, BLOCK_SIZE_K, redn_factor, EVEN_K, K, 4)
         if EVEN_K:
             b = tl.load(b_ptrs)
         else:

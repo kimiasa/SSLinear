@@ -14,12 +14,12 @@ import argparse
 device_index = 0
 seed = 1111
 default_dtype = torch.float16
-data_output_dir = "./results/"
+data_output_dir = "./output.csv"
 
 layer_types= [
-    LowRankLinear,
     torch.nn.Linear,
     SSL,
+    LowRankLinear,
     MonarchLinear,
     BlockdiagButterflyLinear,
     #BlockSparseLinear
@@ -32,11 +32,11 @@ shapes_of_interest = [
     (1024, 1024, 1024),
     (16384, 1024, 1024),
     (32768, 1024, 1024),
-    (36864, 3072, 768),
-    (36864, 768, 3072),
-    (12288, 2304, 768),
     (36864, 768, 768),
-    (12288, 50256, 768),
+    (36864, 768, 3072),
+    (36864, 3072, 768),
+    (12288, 768, 2304),
+    (12288, 768, 50256),
 ]
 reduction_factors = [1, 2, 4, 8, 16]
 
@@ -145,7 +145,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Process a file path.")
 
     # Add an optional argument for the file path
-    parser.add_argument('-f', '--file', type=str, help='The path to the output csv file')
+    parser.add_argument('-f', '--file', type=str, help='The path to the output csv file', default=data_output_dir)
     parser.add_argument('--square', action='store_true', help='A flag for benchmarking square shapes')
     parser.add_argument('--paper', action='store_true', help='A flag for benchmarking shapes of interest for the paper')
     parser.add_argument('--proton', action='store_true', help='A flag for using proton instead of cuda events')
