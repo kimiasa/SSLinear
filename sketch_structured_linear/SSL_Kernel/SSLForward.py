@@ -98,8 +98,8 @@ def _generate_configs():
         BLOCK_SIZE_N = [32, 64, 128, 256]
         BLOCK_SIZE_K = [16, 32, 64]
     elif cap == 89:
-        BLOCK_SIZE_M = [16, 32, 64, 128]
-        BLOCK_SIZE_N = [16, 32, 64, 128]
+        BLOCK_SIZE_M = [16, 32, 64, 128, 256]
+        BLOCK_SIZE_N = [16, 32, 64, 128, 256]
         BLOCK_SIZE_K = [16, 32, 64]
     else:
         BLOCK_SIZE_M = [16, 32, 64, 128, 256]
@@ -140,16 +140,11 @@ def _early_config_prune(configs, named_args, **kwargs):
             # small block size k is only considered when larger block size is not possible
             continue
         if cap >= 80:
-            if redn_factor >= 8:
-                # inner pipeline = 4
-                estimated_shared_mem = (4 * BLOCK_SIZE_K * BLOCK_SIZE_M + num_stages * BLOCK_SIZE_K * BLOCK_SIZE_N) * element_size
-            elif redn_factor >= 4:
-                # inner pipeline = 3
-                estimated_shared_mem = (3 * BLOCK_SIZE_K * BLOCK_SIZE_M + num_stages * BLOCK_SIZE_K * BLOCK_SIZE_N) * element_size
-            elif redn_factor >= 2:
-                estimated_shared_mem = (2 * BLOCK_SIZE_K * BLOCK_SIZE_M + num_stages * BLOCK_SIZE_K * BLOCK_SIZE_N) * element_size
+            #XXX(Keren): hack for sm89
+            if redn_factor >= 2:
+                estimated_shared_mem = (num_stages * BLOCK_SIZE_K * BLOCK_SIZE_N) * element_size
             else:
-                estimated_shared_mem = (num_stages * BLOCK_SIZE_K * BLOCK_SIZE_M + num_stages * BLOCK_SIZE_K * BLOCK_SIZE_N) * element_size
+                estimated_shared_mem = num_stages * (BLOCK_SIZE_K * BLOCK_SIZE_M + BLOCK_SIZE_K * BLOCK_SIZE_N) * element_size
         else:
             estimated_shared_mem = num_stages * (BLOCK_SIZE_K * BLOCK_SIZE_M + BLOCK_SIZE_K * BLOCK_SIZE_N) * element_size
         if estimated_shared_mem > max_shared_mem:
@@ -261,7 +256,7 @@ def ssl_pipeline_a(
     R0: tl.constexpr, VEC: tl.constexpr, BLOCK_SIZE_M: tl.constexpr, BLOCK_SIZE_K: tl.constexpr, redn_factor: tl.constexpr, EVEN_K: tl.constexpr, K: tl.constexpr, num_stages: tl.constexpr
 ):
     a = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_K), dtype=a_ptr.dtype.element_ty)
-    for ck in tl.range(0, redn_factor, num_stages=num_stages):
+    for ck in range(0, redn_factor):
         IDX1 += R0
         offset = ((((offs_k + (IDX + IDX1) * VEC)) % BLOCK_SIZE_K) * stride_ak)[None, :]
         if EVEN_K:
@@ -337,17 +332,8 @@ def ssl_forward_core(
             IDX1 += R0
             a = ssl_acc_a(offs_k, IDX, IDX1, stride_ak, 0, k, a_ptrs, VEC, BLOCK_SIZE_K, redn_factor, EVEN_K, K)
             a_ptrs += BLOCK_SIZE_K * stride_ak
-        elif redn_factor == 2:
-            IDX1 += R0
-            a0 = ssl_acc_a(offs_k, IDX, IDX1, stride_ak, 0, k, a_ptrs, VEC, BLOCK_SIZE_K, redn_factor, EVEN_K, K)
-            a_ptrs += BLOCK_SIZE_K * stride_ak
-            IDX1 += R0
-            a1 = ssl_acc_a(offs_k, IDX, IDX1, stride_ak, 1, k, a_ptrs, VEC, BLOCK_SIZE_K, redn_factor, EVEN_K, K)
-            a_ptrs += BLOCK_SIZE_K * stride_ak
-            a = a0 + a1
-        elif redn_factor == 4:
-            a = ssl_pipeline_a(offs_k, IDX, IDX1, stride_ak, k, a_ptrs, a_ptr, R0, VEC, BLOCK_SIZE_M, BLOCK_SIZE_K, redn_factor, EVEN_K, K, 3)
         else:
+            #XXX(Keren): hack for sm89
             a = ssl_pipeline_a(offs_k, IDX, IDX1, stride_ak, k, a_ptrs, a_ptr, R0, VEC, BLOCK_SIZE_M, BLOCK_SIZE_K, redn_factor, EVEN_K, K, 4)
         if EVEN_K:
             b = tl.load(b_ptrs)
