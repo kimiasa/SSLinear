@@ -13,7 +13,6 @@ import argparse
 
 device_index = 0
 seed = 1111
-default_dtype = torch.float16
 data_output_dir = "./output.csv"
 
 layer_types= [
@@ -28,7 +27,8 @@ layer_types= [
 shapes = [(2**n, 2**n) for n in range(9,15)]
 batch_sizes = [2**n for n in range(15, 16)]
 
-shapes_of_interest = [
+# In (M, K, N) format
+gpt2_shapes = [
     (1024, 1024, 1024),
     (16384, 1024, 1024),
     (32768, 1024, 1024),
@@ -37,6 +37,25 @@ shapes_of_interest = [
     (36864, 3072, 768),
     (12288, 768, 2304),
     (12288, 768, 50256),
+    (32768, 768, 3072),
+    (32768, 3072, 768),
+    (32768, 768, 2304),
+    (32768, 768, 768),
+]
+# In (M, K, N) format
+llama_shapes = [
+    (4096, 4096, 4096),
+    (4096, 4096, 1024),
+    (4096, 4096, 14336),
+    (4096, 14336, 4096),
+    (8192, 4096, 4096),
+    (8192, 4096, 1024),
+    (8192, 4096, 14336),
+    (8192, 14336, 4096),
+    (16384, 4096, 4096),
+    (16384, 4096, 1024),
+    (16384, 4096, 14336),
+    (16384, 14336, 4096),
 ]
 reduction_factors = [1, 2, 4, 8, 16]
 
@@ -77,7 +96,6 @@ def time_random_in_forward_proton(model, input_shape, batch_size, generate_grad=
     return np.sum(timings) / repetitions, np.std(timings) / repetitions
 
 def time_random_in_forward_cuda_event(model: nn.Module, input_shape, batch_size, generate_grad=False, warmup=True, repetitions=25):
-    timings = []
     full_shape = (batch_size, *input_shape)
     x = torch.rand(*full_shape, dtype=default_dtype)
     stream = torch.cuda.Stream()
@@ -112,6 +130,8 @@ def profile_all_layers(batch_size, shape):
                 'shape': [(batch_size, shape[0], shape[1])],
                 'num_params': num_params,
                 'avg_time_ms': [avg_time],
+                'input_shape': [(batch_size, shape[0])],
+                'parameter_shape': [(shape[0], shape[1])]
             }
             print(f'{label} shape:{shape} num_params: {num_params} {avg_time:3f} ms')
             df = pd.concat([df, pd.DataFrame(new_data)])
@@ -124,8 +144,9 @@ def profile_square(filepath):
             save_to_csv(profile_all_layers(batch_size, shape), filepath)
 
 def profile_target(filepath):
-    for shape in shapes_of_interest:
+    for shape in gpt2_shapes + llama_shapes:
         print(shape)
+        # Need to flip indices 1 & 2 since shape is in M, K, N format
         save_to_csv(profile_all_layers(shape[0], (shape[1], shape[2])), filepath)
 
 def main(target, square, filepath):
