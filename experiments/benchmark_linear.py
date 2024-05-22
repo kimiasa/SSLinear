@@ -21,7 +21,6 @@ layer_types= [
     LowRankLinear,
     MonarchLinear,
     BlockdiagButterflyLinear,
-    #BlockSparseLinear
 ]
 
 shapes = [(2**n, 2**n) for n in range(9,15)]
