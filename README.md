@@ -6,8 +6,6 @@
 
 
 ## Installing
-
-### Without proton/after proton installation
 ```sh
 conda create -n sslinear
 conda activate sslinear
