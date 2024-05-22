@@ -18,6 +18,12 @@ INSTALL_BENCHMARK_DEPENDENCIES=1 pip install -e .
 ```
 Where `INSTALL_BENCHMARK_DEPENDENCIES` can be optionally set to 0 if you don't plan on running against the benchmarks.
 
+## Using the PyTorch layers
+```
+from sketch_structured_linear.SSL import SSL
+layer = SSL(in_dim, out_dim, reduction_factor, dtype)
+```
+
 ## Benchmarking
 
 ### Benchmarking linear layer latency of various shapes
