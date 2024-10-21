@@ -1,4 +1,0 @@
-[submodule "SSL_Kernel"]
-	path = SSL_Kernel
-	url = git@github.com:kimiasa/RoastComp.git
-	branch = main

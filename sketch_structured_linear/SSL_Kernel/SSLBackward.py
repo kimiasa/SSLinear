@@ -2,17 +2,20 @@ from typing import Tuple
 import torch
 import triton
 import triton.language as tl
-#import SSLForward
 import functools
+try:
+    import SSLForward
+except:
+    from . import SSLForward
 
 A = 11211
 B = 11311
 C = 11411
 D = 11511
 
-allow_backward_autotune = True
-override_block_size_k = True
-default_vec_width = 8
+allow_backward_autotune = False
+override_block_size_k = False
+default_vec_width = SSLForward.default_vec
 
 
 def matmul(input: torch.tensor, weight: torch.tensor, output_grad: torch.tensor, log2_redn_factor: int):
@@ -408,7 +411,7 @@ def unit_test_1():
     b = torch.arange((S * S / 2), device='cuda',
                      dtype=torch.float16).reshape(int(S / 2), S).T
     grad = torch.randn((S, S), device='cuda', dtype=torch.float16)
-    b_full = 0 #SSLForward.matmul(torch.eye(S, device='cuda', dtype=torch.float16), b, 1)
+    b_full = SSLForward.matmul(torch.eye(S, device='cuda', dtype=torch.float16), b, 1)
     triton_input_grad, triton_weight_grad = matmul(torch.eye(S, device='cuda', dtype=torch.float16), b, torch.eye(S, device='cuda', dtype=torch.float16), 1)
     torch_input_grad, torch_weight_grad = torch_matmul(torch.eye(S, device='cuda', dtype=torch.float16), b_full, torch.eye(S, device='cuda', dtype=torch.float16))
     print(triton_input_grad.shape, triton_weight_grad.shape, torch_input_grad.shape, torch_weight_grad.shape)

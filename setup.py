@@ -53,7 +53,7 @@ setup(
     ],  # Optional
 
     #project_urls={  # Optional
-    #    'Source': 'https://github.com/apd10/RzLinear'
+    #    'Source': 'https://github.com/kimiasa/SSLinear'
     #},
 
     include_package_data=True,

@@ -13,21 +13,20 @@ import time
 from .block_sizes import BLOCK_SIZE_M, BLOCK_SIZE_N, BLOCK_SIZE_K
 
 controls = {}
-controls['triton_allow_tf32'] = True
-controls['triton_allow_autotune'] = True
+controls['triton_allow_tf32'] = False
+controls['triton_allow_autotune'] = False
 
 BLOCK_SIZE_M = 64
-BLOCK_SIZE_N = 256
+BLOCK_SIZE_N = 128
 BLOCK_SIZE_K = 32
 
 class SketchStructuredLinearFunction(torch.autograd.Function):
              
     @staticmethod
-    @torch.cuda.amp.custom_fwd(cast_inputs=torch.float16)
+    @torch.cuda.amp.custom_fwd
     def forward(ctx, input: torch.tensor, weight: torch.tensor, bias: torch.tensor,
                 random_numbers: torch.tensor, redn_factor: int) -> torch.tensor:  
 
-        ctx._fwd_used_autocast = torch.is_autocast_enabled()
 
         '''
         Args:
@@ -50,7 +49,7 @@ class SketchStructuredLinearFunction(torch.autograd.Function):
                                 BLOCK_SIZE_M=BLOCK_SIZE_M, BLOCK_SIZE_N=BLOCK_SIZE_N, BLOCK_SIZE_K=BLOCK_SIZE_K,
                                 allow_tf32=controls['triton_allow_tf32'], allow_autotune=controls['triton_allow_autotune'])
         
-        ctx.save_for_backward(input, weight, random_numbers)
+        ctx.save_for_backward(input, weight, bias, random_numbers)
         ctx.redn_factor = redn_factor
 
         return output
@@ -58,30 +57,26 @@ class SketchStructuredLinearFunction(torch.autograd.Function):
     @staticmethod
     @torch.cuda.amp.custom_bwd
     def backward(ctx, grad):
+        
+        input, weight, _, random_numbers = ctx.saved_tensors
+        
+        assert(random_numbers.numel() == 4)
+        R3, R2, R1, R0 = random_numbers[3].item(), random_numbers[2].item(
+        ), random_numbers[1].item(), random_numbers[0].item()
 
         
-        with torch.cuda.amp.autocast(ctx._fwd_used_autocast):
-        
-            input, weight, random_numbers = ctx.saved_tensors
-            
-            assert(random_numbers.numel() == 4)
-            R3, R2, R1, R0 = random_numbers[3].item(), random_numbers[2].item(
-            ), random_numbers[1].item(), random_numbers[0].item()
+        redn_factor = ctx.redn_factor
+        M, K, N= input.shape[0], input.shape[1], weight.shape[0]
 
-            
-            redn_factor = ctx.redn_factor
-            M, K, N= input.shape[0], input.shape[1], weight.shape[0]
+        input_grad, weight_grad = ssl_backward_tl(input.contiguous(), weight, grad.contiguous(), M, K, N, redn_factor, R3, R2, R1,
+                                                    R0, allow_tf32=controls['triton_allow_tf32'],
+                                                    BLOCK_SIZE_M=BLOCK_SIZE_M, BLOCK_SIZE_N=BLOCK_SIZE_N, BLOCK_SIZE_K=BLOCK_SIZE_K)
+    
+        bias_grad = None
+        if ctx.needs_input_grad[2]:
+            bias_grad = grad.sum(dim=0)
 
-            input_grad, weight_grad = ssl_backward_tl(input.contiguous(), weight, grad.contiguous(), M, K, N, redn_factor, R3, R2, R1,
-                                                      R0, allow_tf32=controls['triton_allow_tf32'],
-                                                      BLOCK_SIZE_M=BLOCK_SIZE_M, BLOCK_SIZE_N=BLOCK_SIZE_N, BLOCK_SIZE_K=BLOCK_SIZE_K)
-        
-            #bias_grad = None
-            #if ctx.needs_input_grad[2]:
-            #    bias_grad = grad.sum(0)
-
-                                          
-            return input_grad, weight_grad, None, None 
+        return input_grad, weight_grad, bias_grad, None, None 
     
 ssl_linear = SketchStructuredLinearFunction.apply
 

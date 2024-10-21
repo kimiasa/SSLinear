@@ -11,7 +11,7 @@ C = 11411
 D = 11511
 
 device_index = 0
-benchmarking = True
+benchmarking = False
 default_vec = 8
 
 
@@ -319,13 +319,12 @@ def ssl_forward_core(
     b_ptrs = b_ptr + (offs_k[:, None] * stride_bk
                       + offs_bn[None, :] * stride_bn)
     a_ptrs = a_ptr + (offs_am[:, None] * stride_am)
-    o_ptrs = o_ptr + (offs_bn[None, :])
     # -----------------------------------------------------------
     # Iterate to compute a block of the C matrix.
     # We accumulate into a `[BLOCK_SIZE_M, BLOCK_SIZE_N]` block
     # of fp32 values for higher accuracy.
     # `accumulator` will be converted back to fp16 after the loop.
-    accumulator = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=c_ptr.dtype.element_ty)
+    accumulator = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
     IDX = (R3 + R2 * pid_n)
     for k in range(0, tl.cdiv(K, BLOCK_SIZE_K * redn_factor)):
         # Load the next block of A and B, generate a mask by checking the K dimension.
@@ -355,13 +354,13 @@ def ssl_forward_core(
             b = tl.load(b_ptrs, mask=offs_k[:, None] < (K // redn_factor) - k * BLOCK_SIZE_K, other=0.0)
         # We accumulate along the K dimension.
 
-        accumulator += tl.dot(a, b, allow_tf32=allow_tf32, out_dtype=c_ptr.dtype.element_ty)
+        accumulator += tl.dot(a, b, allow_tf32=allow_tf32, out_dtype=tl.float32)
         # Advance the ptrs to the next K block.
         b_ptrs += BLOCK_SIZE_K * stride_bk
     # You can fuse arbitrary activation functions here
     # while the accumulator is still in FP32!
-    bias = tl.load(o_ptrs)
-    accumulator = accumulator + bias
+    bias = tl.load(o_ptr + offs_bn)
+    accumulator = accumulator + bias[None, :]
     c = accumulator.to(tl.float16)
 
     # -----------------------------------------------------------
@@ -510,9 +509,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--profile", action="store_true")
     args = parser.parse_args()
+    import triton.profiler as proton
     benchmark.run(show_plots=True, print_data=True, save_path=".")
     if args.profile:
-        import triton.profiler as proton
         benchmarking = False
         proton.start(name="ssl_forward", hook="triton")
         for _ in range(5):

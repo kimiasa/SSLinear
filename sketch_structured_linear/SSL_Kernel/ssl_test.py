@@ -50,26 +50,27 @@ def test_forward():
     M = 64
     K = 64
     N = 64
-    BLOCK_SIZE_K = 64
-    BLOCK_SIZE_N = 64
-    BLOCK_SIZE_M = 64
-    VEC = 2
+    BLOCK_SIZE_K = 32
+    BLOCK_SIZE_N = 32
+    BLOCK_SIZE_M = 32
+    VEC = bwd.default_vec_width
 
-    redn_factor = 1
+    redn_factor = 2
 
     input = torch.eye(M, device='cuda', dtype=torch.float16)
     hashed_weight = torch.arange((N * int(K // redn_factor)), device='cuda', dtype=torch.float16).reshape(N, int(K // redn_factor))
+    bias = torch.empty(N, device='cuda', dtype=torch.float16)
 
     R3, R2, R1, R0 = A, B, C, D
 
     torch_output = torch.mm(input, torch_get_full_weight_idx(hashed_weight).T)
 
     # Disable tf32 in testing
-    tl_output = fwd.ssl_forward_tl(input, hashed_weight.T, input.shape[0], input.shape[1], hashed_weight.shape[0], redn_factor, R3, R2, R1, R0,
+    tl_output = fwd.ssl_forward_tl(input, hashed_weight.T, bias, input.shape[0], input.shape[1], hashed_weight.shape[0], redn_factor, R3, R2, R1, R0,
                                    BLOCK_SIZE_M=BLOCK_SIZE_M, BLOCK_SIZE_N=BLOCK_SIZE_N, BLOCK_SIZE_K=BLOCK_SIZE_K, VEC=VEC,
                                    allow_autotune=False)
 
-    assert (torch.allclose(tl_output, torch_output, rtol=1e-3) is True)
+    assert (torch.allclose(tl_output, torch_output+bias, rtol=1e-3) is True)
 
 
 def test_backward_weight():
@@ -94,15 +95,15 @@ def test_backward_weight():
     M = 64
     K = 64
     N = 64
-    BLOCK_SIZE_K = 32
+    BLOCK_SIZE_K = 16
     BLOCK_SIZE_N = 32
-    BLOCK_SIZE_M = 64
-    VEC = 2
+    BLOCK_SIZE_M = 32
+    VEC = bwd.default_vec_width
 
-    redn_factor = 2
+    redn_factor = 4
 
-    input = torch.rand((M, K), device='cuda', dtype=torch.float16)
-    output = torch.rand((M, N), device='cuda', dtype=torch.float16)
+    input = torch.randint(1, 5, (M, K), device='cuda', dtype=torch.float16)
+    output = torch.randint(1, 5, (M, N), device='cuda', dtype=torch.float16)
 
     R3, R2, R1, R0 = A, B, C, D
 
@@ -142,7 +143,7 @@ def test_backward_input():
     BLOCK_SIZE_K = 16
     BLOCK_SIZE_N = 64
     BLOCK_SIZE_M = 64
-    VEC = 2
+    VEC = bwd.default_vec_width
 
     redn_factor = 2
 
@@ -184,12 +185,12 @@ def test_backward_autograd():
     bwd.allow_backward_autotune = False
 
     M = 64
-    K = 32
+    K = 64
     N = 64
     BLOCK_SIZE_K = 16
     BLOCK_SIZE_N = 64
     BLOCK_SIZE_M = 64
-    VEC = 2
+    VEC = bwd.default_vec_width
 
     redn_factor = 2
 
@@ -198,6 +199,7 @@ def test_backward_autograd():
 
     input = torch.rand((M, K), device='cuda', dtype=torch.float16)
     hashed_weight = torch.rand((N, int(K // redn_factor)), device='cuda', dtype=torch.float16)
+    bias = torch.rand(N, device='cuda', dtype=torch.float16)
 
     R3, R2, R1, R0 = A, B, C, D
 
@@ -211,11 +213,13 @@ def test_backward_autograd():
 
     auto_grad_input = torch.nn.parameter.Parameter(data=input, requires_grad=True)
     auto_grad_weight = torch.nn.parameter.Parameter(data=hashed_weight, requires_grad=True)
+    auto_grad_bias = torch.nn.parameter.Parameter(data=bias, requires_grad=True)
 
     idx = idx.to(hashed_weight.device)
     torch_idx = torch.nn.parameter.Parameter(data=idx, requires_grad=False)
 
     out = torch.matmul(auto_grad_input, auto_grad_weight.flatten()[torch_idx].T)
+    out = out + auto_grad_bias
 
     out.retain_grad()
 
@@ -223,9 +227,9 @@ def test_backward_autograd():
 
     loss.backward()
 
-    out_grad, torch_weight_grad, torch_input_grad = out.grad, auto_grad_weight.grad, auto_grad_input.grad
+    out_grad, torch_weight_grad, torch_input_grad, torch_bias_grad = out.grad, auto_grad_weight.grad, auto_grad_input.grad, auto_grad_bias.grad
 
-    tl_output = fwd.ssl_forward_tl(input, hashed_weight.T, M, K, N, redn_factor, R3, R2, R1, R0,
+    tl_output = fwd.ssl_forward_tl(input, hashed_weight.T, bias, M, K, N, redn_factor, R3, R2, R1, R0,
                                    BLOCK_SIZE_M=BLOCK_SIZE_M, BLOCK_SIZE_N=BLOCK_SIZE_N, BLOCK_SIZE_K=BLOCK_SIZE_K, VEC=VEC,
                                    allow_autotune=False)
 
@@ -247,7 +251,7 @@ def test_backward_autograd():
 
     torch.testing.assert_close(torch_weight_grad, tl_weight_grad, rtol=1e-3, atol=1e-3)
     torch.testing.assert_close(torch_input_grad, tl_input_grad, rtol=1e-3, atol=1e-3)
-
+    torch.testing.assert_close(torch_bias_grad, out_grad.sum(dim=0), rtol=1e-3, atol=1e-3)
 
 if __name__ == "__main__":
 
@@ -260,3 +264,4 @@ if __name__ == "__main__":
     test_backward_weight()
     test_backward_input()
     test_backward_autograd()
+    

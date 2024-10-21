@@ -4,7 +4,7 @@ from pytorch_block_sparse import BlockSparseLinear
 import numpy as np
 
 class LowRankLinear(nn.Module):
-    def __init__(self, input, output, compression, bias, dtype=torch.float):
+    def __init__(self, input, output, compression, bias=True, dtype=torch.float):
         super(LowRankLinear, self).__init__()
         self.idim = input
         self.odim = output
