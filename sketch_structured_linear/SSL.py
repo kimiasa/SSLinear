@@ -14,7 +14,7 @@ from .block_sizes import BLOCK_SIZE_K as BLOCK_K_SIZE_MIN
 
 class SSL(nn.Module):
     def __init__(self, in_features: int, out_features: int, bias: bool = True, 
-                 redn_factor: int = 2, seed: int = 1024,
+                 redn_factor: int = 2, seed: int = 1024, layer_idx: int = 0,
                  device=None, dtype=None) -> None:
         factory_kwargs = {'device': device, 'dtype': dtype}
         super().__init__()
@@ -27,7 +27,7 @@ class SSL(nn.Module):
        
         self.red_in_features = (in_features  // redn_factor + BLOCK_K_SIZE_MIN - 1) // BLOCK_K_SIZE_MIN * BLOCK_K_SIZE_MIN 
 
-        self.seed = seed
+        self.seed = seed + layer_idx
 
         self.weight = nn.Parameter(torch.zeros((out_features, self.red_in_features), **factory_kwargs))
 
@@ -38,9 +38,6 @@ class SSL(nn.Module):
         #self.reset_parameters()
 
         self.random_numbers = HasherFactory.get("uhash", self.seed).random_numbers.to('cpu')
-
-    def set_hash_seed(self, seed):
-        self.random_numbers = HasherFactory.get("uhash", seed).random_numbers.to('cpu')
 
     def reset_parameters(self) -> None:
         # Setting a=sqrt(5) in kaiming_uniform is the same as initializing with
