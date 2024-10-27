@@ -10,22 +10,18 @@ from .SSL_Kernel.SSLBackward import *
 
 import time
 
-from .block_sizes import BLOCK_SIZE_M, BLOCK_SIZE_N, BLOCK_SIZE_K
-
 controls = {}
 controls['triton_allow_tf32'] = False
 controls['triton_allow_autotune'] = False
 
-BLOCK_SIZE_M = 64
-BLOCK_SIZE_N = 128
-BLOCK_SIZE_K = 32
 
 class SketchStructuredLinearFunction(torch.autograd.Function):
              
     @staticmethod
     @torch.cuda.amp.custom_fwd
     def forward(ctx, input: torch.tensor, weight: torch.tensor, bias: torch.tensor,
-                random_numbers: torch.tensor, redn_factor: int) -> torch.tensor:  
+                random_numbers: torch.tensor, redn_factor: int,
+                BLOCK_SIZE_M: int = 64, BLOCK_SIZE_N: int = 128, BLOCK_SIZE_K: int = 32) -> torch.tensor:  
 
 
         '''
@@ -35,6 +31,7 @@ class SketchStructuredLinearFunction(torch.autograd.Function):
             random_numbers (Tensor): (4), hash_function: (R0 * (1+c_index) + R1 * (1+k_index) + R2 * n_index  + R3)
             out_features (int): N
             redn_factor (int): The factor of 2 to determine compression
+            BLOCK_SIZE_M, BLOCK_SIZE_N, BLOCK_SIZE_K: tuned block sizes
 
         Returns:
             output (Tensor): (batch_size, out_features)
@@ -51,6 +48,7 @@ class SketchStructuredLinearFunction(torch.autograd.Function):
         
         ctx.save_for_backward(input, weight, bias, random_numbers)
         ctx.redn_factor = redn_factor
+        ctx.block_sizes = (BLOCK_SIZE_M, BLOCK_SIZE_N, BLOCK_SIZE_K) 
 
         return output
 
@@ -64,6 +62,7 @@ class SketchStructuredLinearFunction(torch.autograd.Function):
         R3, R2, R1, R0 = random_numbers[3].item(), random_numbers[2].item(
         ), random_numbers[1].item(), random_numbers[0].item()
 
+        BLOCK_SIZE_M, BLOCK_SIZE_N, BLOCK_SIZE_K = ctx.block_sizes
         
         redn_factor = ctx.redn_factor
         M, K, N= input.shape[0], input.shape[1], weight.shape[0]

@@ -170,6 +170,52 @@ def _metadata_fn(
     num_warps = metadata.num_warps
     return {"name": f"ssl_bm:{bm},bn:{bn},bk:{bk},stages:{num_stages},warps:{num_warps}"}
 
+@triton.autotune(
+    configs=_generate_configs(), key=['M', 'N', 'K_RED'],
+    prune_configs_by={
+        'early_config_prune': _early_config_prune
+    },
+    warmup=1,
+    rep=10,
+)
+@triton.heuristics({
+    "EVEN_K": lambda META: META['K_RED'] % META['BLOCK_SIZE_K'] == 0,
+})
+@triton.jit(launch_metadata=_metadata_fn)
+def ssl_forward_kernel_pretune(
+    # Pointers to matrices
+    a_ptr, b_ptr, o_ptr, c_ptr,
+    # Best block_sizes 
+    m_blk_ptr, k_blk_ptr, n_blk_ptr, 
+    # Matrix dimensions
+    M, N, K, K_RED,
+    # The stride variables represent how much to increase the ptr by when moving by 1
+    # element in a particular dimension.
+    stride_am, stride_ak,
+    stride_bk, stride_bn,
+    stride_cm, stride_cn,
+    allow_tf32: tl.constexpr,
+    # Random numbers
+    R3: tl.constexpr, R2: tl.constexpr, R1: tl.constexpr, R0: tl.constexpr,
+    # Meta-parameters
+    BLOCK_SIZE_M: tl.constexpr, BLOCK_SIZE_N: tl.constexpr, BLOCK_SIZE_K: tl.constexpr,
+    GROUP_SIZE_M: tl.constexpr, VEC: tl.constexpr, EVEN_K: tl.constexpr,
+    redn_factor: tl.constexpr,
+):
+    ssl_forward_core(redn_factor=redn_factor, a_ptr=a_ptr, b_ptr=b_ptr, o_ptr=o_ptr, c_ptr=c_ptr, M=M, N=N, K=K,
+                     stride_am=stride_am, stride_ak=stride_ak,
+                     stride_bk=stride_bk, stride_bn=stride_bn,
+                     stride_cm=stride_cm, stride_cn=stride_cn,
+                     allow_tf32=allow_tf32,
+                     R3=R3, R2=R2, R1=R1, R0=R0,
+                     BLOCK_SIZE_M=BLOCK_SIZE_M, BLOCK_SIZE_N=BLOCK_SIZE_N, BLOCK_SIZE_K=BLOCK_SIZE_K,
+                     GROUP_SIZE_M=GROUP_SIZE_M, VEC=VEC, EVEN_K=EVEN_K)
+    
+    tl.store(m_blk_ptr, BLOCK_SIZE_M)
+    tl.store(k_blk_ptr, BLOCK_SIZE_K)
+    tl.store(n_blk_ptr, BLOCK_SIZE_N)
+
+
 
 @triton.autotune(
     configs=_generate_configs(), key=['M', 'N', 'K_RED'],
