@@ -20,9 +20,7 @@ class SSL(nn.Module):
         factory_kwargs = {'device': device, 'dtype': dtype}
         super().__init__()
 
-        self.BLOCK_SIZE_M = kwargs.get('BLOCK_SIZE_M', BLOCK_K_SIZE_MIN)
-        self.BLOCK_SIZE_K = kwargs.get('BLOCK_SIZE_K', BLOCK_K_SIZE_MIN)
-        self.BLOCK_SIZE_N = kwargs.get('BLOCK_SIZE_N', BLOCK_K_SIZE_MIN)
+        self.BLOCK_SIZE_M, self.BLOCK_SIZE_K, self.BLOCK_SIZE_N  = (kwargs.get('BLOCK_SIZE_M', BLOCK_K_SIZE_MIN), kwargs.get('BLOCK_SIZE_K', BLOCK_K_SIZE_MIN), kwargs.get('BLOCK_SIZE_N', BLOCK_K_SIZE_MIN))
 
         assert redn_factor > 0 and (redn_factor & (redn_factor - 1)) == 0 # reduction factor should be power of 2
         self.redn_factor = redn_factor
@@ -30,7 +28,7 @@ class SSL(nn.Module):
         self.out_features = out_features  
         self.in_features = in_features    
        
-        self.red_in_features = (in_features  // redn_factor + BLOCK_K_SIZE_MIN - 1) // BLOCK_K_SIZE_MIN * BLOCK_K_SIZE_MIN 
+        self.red_in_features = (in_features  // redn_factor + self.BLOCK_SIZE_K - 1) // self.BLOCK_SIZE_K * self.BLOCK_SIZE_K 
 
         self.seed = seed + kwargs.get('layer_idx', 0)
 
@@ -99,12 +97,12 @@ class SSL(nn.Module):
         R3, R2, R1, R0 = self.random_numbers[3].item(), self.random_numbers[2].item(), self.random_numbers[1].item(), self.random_numbers[0].item()
 
         def grid(META):
-        return (
-            triton.cdiv(M, META['BLOCK_SIZE_M'])
-            * triton.cdiv(N, META['BLOCK_SIZE_N']),
-        )
+            return (
+                triton.cdiv(M, META['BLOCK_SIZE_M'])
+                * triton.cdiv(N, META['BLOCK_SIZE_N']),
+            )
 
-        ssl_forward_kernel_tune[grid](
+        ssl_forward_kernel_pretune[grid](
             sample_input, self.weight, self.bias, output,
             block_m, block_k, block_n 
             M, N, K, K // self.redn_factor,
