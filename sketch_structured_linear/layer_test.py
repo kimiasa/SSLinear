@@ -16,11 +16,11 @@ def test_sslinear():
     M = 32768
     K = 1024
     N = 1024
-    input = torch.randn((M,K)).cuda().float()
+    input = torch.randn((M,K)).cuda().half()
     torch.manual_seed(12)
-    orig = torch.nn.Linear(K,512).cuda().float()
+    orig = torch.nn.Linear(K,512).cuda().half()
     torch.manual_seed(12)
-    mod = SSL(K,512, redn_factor=1, batch_size=M).cuda().float()
+    mod = SSL(K,512, redn_factor=1, batch_size=M).cuda().half()
     print("weight close=", torch.allclose(mod.weight, orig.weight, atol=1e-1, rtol=1e-5))
     print("bias close=", torch.allclose(mod.bias, orig.bias, atol=1e-1, rtol=1e-5))
 
@@ -30,8 +30,8 @@ def test_sslinear():
     print(y)
     print("fwd close=", torch.allclose(x, y, atol=1e-1, rtol=1e-5))
 
-    input = torch.randn((M,K)).cuda().float()
-    orig = torch.nn.Linear(K,N).cuda().float()
+    input = torch.randn((M,K)).cuda().half()
+    orig = torch.nn.Linear(K,N).cuda().half()
     # quick time test
     times = []
     for i in range(12):
@@ -47,7 +47,7 @@ def test_sslinear():
     print("orig", np.mean(times[3:]), "+-", np.std(times[3:]))
 
     for fac in [1,2,4,8]:
-        mod = SSL(K,N,redn_factor=fac,batch_size=M).cuda().float()
+        mod = SSL(K,N,redn_factor=fac,batch_size=M).cuda().half()
         print("before autotune: ", mod.BLOCK_SIZE_K, mod.BLOCK_SIZE_N, mod.BLOCK_SIZE_M)
         mod.autotune()
         print("after autotune: ", mod.BLOCK_SIZE_K, mod.BLOCK_SIZE_N, mod.BLOCK_SIZE_M)
@@ -69,7 +69,7 @@ if __name__ == '__main__':
     K = 1024
     N = 1024
     F = 2
-    mod = SSL(K, N, redn_factor=F, bias=False, batch_size=M).cuda().float()
-    input1 = torch.nn.Parameter(torch.randn((M,K)).cuda().float(), requires_grad=True)
+    mod = SSL(K, N, redn_factor=F, bias=False, batch_size=M).cuda().half()
+    input1 = torch.nn.Parameter(torch.randn((M,K)).cuda().half(), requires_grad=True)
     SSF.controls['triton_allow_autotune'] = False
     test_sslinear()

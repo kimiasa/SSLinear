@@ -96,8 +96,8 @@ class SSL(nn.Module):
 
         device = torch.device('cuda') if torch.cuda.is_available() else (_ for _ in ()).throw(RuntimeError("CUDA is not available. Please run on a CUDA-capable GPU."))
                 
-        sample_input = torch.randn(self.batch_size, self.in_features, device=device)
-        output = torch.empty(self.batch_size, self.out_features, device=device)
+        sample_input = torch.randn(self.batch_size, self.in_features, device=device, dtype=self.weight.dtype)
+        output = torch.empty(self.batch_size, self.out_features, device=device, dtype=self.weight.dtype)
 
         block_m, block_k, block_n = (torch.zeros((1,), device=device, dtype=torch.int), 
                                     torch.zeros((1,), device=device, dtype=torch.int), 
