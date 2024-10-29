@@ -380,7 +380,7 @@ def ssl_forward_core(
 
         if redn_factor == 1:
             IDX1 += R0
-            a = ssl_acc_a(offs_k, IDX, IDX1, stride_ak, 0, k, a_ptrs, VEC, BLOCK_SIZE_K, redn_factor, EVEN_K, K)
+            a = ssl_acc_a(offs_k, 0, 0, stride_ak, 0, k, a_ptrs, VEC, BLOCK_SIZE_K, redn_factor, EVEN_K, K)
             a_ptrs += BLOCK_SIZE_K * stride_ak
         elif redn_factor == 2:
             IDX1 += R0

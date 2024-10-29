@@ -4,30 +4,6 @@ from typing import List, Union, Optional
 from transformers import PreTrainedModel
 from sketch_structured_linear.SSL import SSL
 
-@lru_cache(maxsize=None)
-def get_idx(M, K, N, block_m, block_k, block_n, R3,R2,R1,R0, reduction_factor, device):
-    # weight shape is N,K || but we will start with how it is viewed in sslforward
-    assert reduction_factor > 1, "dont call for reduction factor 1"
-    print(block_m, block_k, block_n)
-    red_input_dim = (K  // reduction_factor + BLOCK_K_SIZE_MIN - 1) // BLOCK_K_SIZE_MIN * BLOCK_K_SIZE_MIN   # keep it multiple of block size k which is generally set to 32
-    IDX = torch.arange(N*red_input_dim, device=device).long().reshape(N, red_input_dim)
-    IDXT = IDX.T
- 
-    FullIDX = torch.zeros((K, N), device=device, dtype=torch.long)
-    for i in range((K+block_k -1)//block_k):
-        for j in range((N+block_k-1)//block_n):
-            it = i // reduction_factor
-            itin = i % reduction_factor
-            IDX = (R3 + R2 * j + R1*(it+1))
-            IDX1 = R0*(itin+1)
-            VEC = 4
-            offset = block_k - ((IDX + IDX1) * VEC) % block_k
-            locs_k = (offset + torch.arange(block_k, device=device).long() ) % block_k
-            block = IDXT[it*block_k:(it+1)*block_k,j*block_n:(j+1)*block_n][locs_k]
-            kl, nl = FullIDX[i*block_k:(i+1)*block_k,j*block_n:(j+1)*block_n].shape
-            FullIDX[i*block_k:(i+1)*block_k,j*block_n:(j+1)*block_n] = block[:kl,:nl]
-    return FullIDX
-
 
 def get_from_linear(weight, in_dim, out_dim, bias, seed, red_fac):
         mod = SSL(in_dim, out_dim, redn_factor=red_fac, seed=seed, bias=(bias is not None))
@@ -38,7 +14,7 @@ def get_from_linear(weight, in_dim, out_dim, bias, seed, red_fac):
             random_numbers = mod.random_numbers
             R3, R2, R1, R0 = random_numbers[3].item(), random_numbers[2].item(
                     ), random_numbers[1].item(), random_numbers[0].item()
-            IDX = get_idx(-1, in_dim, out_dim, block_m=mod.BLOCK_SIZE_M, block_k=mod.BLOCK_SIZE_K, block_n=mod.BLOCK_SIZE_N, R3=R3,R2=R2,R1=R1,R0=R0, reduction_factor=red_fac, device=weight.device) # K x N
+            IDX = mod.get_idx(-1, in_dim, out_dim, block_m=mod.BLOCK_SIZE_M, block_k=mod.BLOCK_SIZE_K, block_n=mod.BLOCK_SIZE_N, R3=R3,R2=R2,R1=R1,R0=R0, reduction_factor=red_fac, device=weight.device) # K x N
             IDX = torch.transpose(IDX, 0, 1)
             IDX = IDX.contiguous()
             comp_weight = torch.zeros_like(mod.weight.data).view(-1)
