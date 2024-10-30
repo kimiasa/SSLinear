@@ -27,7 +27,7 @@ def ssl_forward_tl(input: torch.tensor, weight: torch.tensor, bias: torch.tensor
                    redn_factor: int,
                    R3: int, R2: int, R1: int, R0: int,
                    BLOCK_SIZE_M: int = 64, BLOCK_SIZE_N: int = 64, BLOCK_SIZE_K: int = 32,
-                   allow_tf32: bool = False, allow_autotune: bool = False, VEC=default_vec
+                   allow_tf32: bool = False, allow_autotune: bool = False, VEC: int = default_vec, BIAS: bool = True,
                    ) -> torch.tensor:
     '''
       Compute input_tensor x weight and return an output tensor
@@ -64,7 +64,8 @@ def ssl_forward_tl(input: torch.tensor, weight: torch.tensor, bias: torch.tensor
             allow_tf32=allow_tf32,
             R3=R3, R2=R2, R1=R1, R0=R0,
             GROUP_SIZE_M=1,
-            VEC=8,
+            VEC=VEC,
+            BIAS=BIAS,
             redn_factor=redn_factor
         )
     else:
@@ -83,6 +84,7 @@ def ssl_forward_tl(input: torch.tensor, weight: torch.tensor, bias: torch.tensor
             BLOCK_SIZE_K=BLOCK_SIZE_K,
             GROUP_SIZE_M=1,
             VEC=VEC,
+            BIAS=BIAS,
             EVEN_K=(K % (BLOCK_SIZE_K * redn_factor) == 0),
             redn_factor=redn_factor,
         )
@@ -200,6 +202,7 @@ def ssl_forward_kernel_pretune(
     # Meta-parameters
     BLOCK_SIZE_M: tl.constexpr, BLOCK_SIZE_N: tl.constexpr, BLOCK_SIZE_K: tl.constexpr,
     GROUP_SIZE_M: tl.constexpr, VEC: tl.constexpr, EVEN_K: tl.constexpr,
+    BIAS: tl.constexpr,
     redn_factor: tl.constexpr,
 ):
     ssl_forward_core(redn_factor=redn_factor, a_ptr=a_ptr, b_ptr=b_ptr, o_ptr=o_ptr, c_ptr=c_ptr, M=M, N=N, K=K,
@@ -209,7 +212,7 @@ def ssl_forward_kernel_pretune(
                      allow_tf32=allow_tf32,
                      R3=R3, R2=R2, R1=R1, R0=R0,
                      BLOCK_SIZE_M=BLOCK_SIZE_M, BLOCK_SIZE_N=BLOCK_SIZE_N, BLOCK_SIZE_K=BLOCK_SIZE_K,
-                     GROUP_SIZE_M=GROUP_SIZE_M, VEC=VEC, EVEN_K=EVEN_K)
+                     GROUP_SIZE_M=GROUP_SIZE_M, VEC=VEC, EVEN_K=EVEN_K, BIAS=BIAS)
     
     tl.store(m_blk_ptr, BLOCK_SIZE_M)
     tl.store(k_blk_ptr, BLOCK_SIZE_K)
@@ -245,6 +248,7 @@ def ssl_forward_kernel_tune(
     # Meta-parameters
     BLOCK_SIZE_M: tl.constexpr, BLOCK_SIZE_N: tl.constexpr, BLOCK_SIZE_K: tl.constexpr,
     GROUP_SIZE_M: tl.constexpr, VEC: tl.constexpr, EVEN_K: tl.constexpr,
+    BIAS: tl.constexpr,
     redn_factor: tl.constexpr,
 ):
     ssl_forward_core(redn_factor=redn_factor, a_ptr=a_ptr, b_ptr=b_ptr, o_ptr=o_ptr, c_ptr=c_ptr, M=M, N=N, K=K,
@@ -254,7 +258,7 @@ def ssl_forward_kernel_tune(
                      allow_tf32=allow_tf32,
                      R3=R3, R2=R2, R1=R1, R0=R0,
                      BLOCK_SIZE_M=BLOCK_SIZE_M, BLOCK_SIZE_N=BLOCK_SIZE_N, BLOCK_SIZE_K=BLOCK_SIZE_K,
-                     GROUP_SIZE_M=GROUP_SIZE_M, VEC=VEC, EVEN_K=EVEN_K)
+                     GROUP_SIZE_M=GROUP_SIZE_M, VEC=VEC, EVEN_K=EVEN_K, BIAS=BIAS)
 
 
 @triton.jit(launch_metadata=_metadata_fn)
@@ -274,6 +278,7 @@ def ssl_forward_kernel_notune(
     # Meta-parameters
     BLOCK_SIZE_M: tl.constexpr, BLOCK_SIZE_N: tl.constexpr, BLOCK_SIZE_K: tl.constexpr,
     GROUP_SIZE_M: tl.constexpr, VEC: tl.constexpr, EVEN_K: tl.constexpr,
+    BIAS: tl.constexpr,
     redn_factor: tl.constexpr,
 ):
     ssl_forward_core(redn_factor=redn_factor, a_ptr=a_ptr, b_ptr=b_ptr, o_ptr=o_ptr, c_ptr=c_ptr, M=M, N=N, K=K,
@@ -283,7 +288,7 @@ def ssl_forward_kernel_notune(
                      allow_tf32=allow_tf32,
                      R3=R3, R2=R2, R1=R1, R0=R0,
                      BLOCK_SIZE_M=BLOCK_SIZE_M, BLOCK_SIZE_N=BLOCK_SIZE_N, BLOCK_SIZE_K=BLOCK_SIZE_K,
-                     GROUP_SIZE_M=GROUP_SIZE_M, VEC=VEC, EVEN_K=EVEN_K)
+                     GROUP_SIZE_M=GROUP_SIZE_M, VEC=VEC, EVEN_K=EVEN_K, BIAS=BIAS)
 
 
 @triton.jit
@@ -336,7 +341,7 @@ def ssl_forward_core(
     R3: int, R2: int, R1: int, R0: int,
     # Meta-parameters
     BLOCK_SIZE_M: tl.constexpr, BLOCK_SIZE_N: tl.constexpr, BLOCK_SIZE_K: tl.constexpr,
-    GROUP_SIZE_M: tl.constexpr, VEC: tl.constexpr, EVEN_K: tl.constexpr
+    GROUP_SIZE_M: tl.constexpr, VEC: tl.constexpr, EVEN_K: tl.constexpr, BIAS: tl.constexpr
 ):
     # -----------------------------------------------------------
     # Map program ids `pid` to the block of C it should compute.
@@ -380,7 +385,7 @@ def ssl_forward_core(
 
         if redn_factor == 1:
             IDX1 += R0
-            a = ssl_acc_a(offs_k, IDX, IDX1, stride_ak, 0, k, a_ptrs, VEC, BLOCK_SIZE_K, redn_factor, EVEN_K, K)
+            a = ssl_acc_a(offs_k, 0, 0, stride_ak, 0, k, a_ptrs, VEC, BLOCK_SIZE_K, redn_factor, EVEN_K, K)
             a_ptrs += BLOCK_SIZE_K * stride_ak
         elif redn_factor == 2:
             IDX1 += R0
@@ -405,8 +410,9 @@ def ssl_forward_core(
         b_ptrs += BLOCK_SIZE_K * stride_bk
     # You can fuse arbitrary activation functions here
     # while the accumulator is still in FP32!
-    bias = tl.load(o_ptr + offs_bn)
-    accumulator = accumulator + bias[None, :]
+    if BIAS:
+        bias = tl.load(o_ptr + offs_bn)
+        accumulator = accumulator + bias[None, :]
     c = accumulator.to(tl.float16)
 
     # -----------------------------------------------------------

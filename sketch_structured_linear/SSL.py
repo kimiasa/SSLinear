@@ -1,15 +1,21 @@
 import math
-
+import triton
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import init
 
-from .SSLFunction import ssl_linear
-from .SSL_Kernel.SSLForward import ssl_forward_kernel_pretune, default_vec
-from .Hasher import *
+try:
+    from .SSLFunction import ssl_linear
+    from .SSL_Kernel.SSLForward import ssl_forward_kernel_pretune, default_vec
+    from .Hasher import *
+except:
+    from SSLFunction import ssl_linear
+    from SSL_Kernel.SSLForward import ssl_forward_kernel_pretune, default_vec
+    from Hasher import *
 
-from .block_sizes import BLOCK_SIZE_K as BLOCK_K_SIZE_MIN
+from functools import lru_cache
+
 
 BLOCK_K_SIZE_MIN = 32
 
@@ -27,29 +33,41 @@ class SSL(nn.Module):
         
         self.out_features = out_features  
         self.in_features = in_features    
-       
+        self.batch_size = kwargs.get('batch_size', 256)
+
         self.red_in_features = (in_features  // redn_factor + self.BLOCK_SIZE_K - 1) // self.BLOCK_SIZE_K * self.BLOCK_SIZE_K 
 
         self.seed = seed + kwargs.get('layer_idx', 0)
-
-        self.weight = nn.Parameter(torch.zeros((out_features, self.red_in_features), **factory_kwargs))
-
-        if bias:
-            self.bias = nn.Parameter(torch.zeros(out_features, **factory_kwargs))
-        else:
-            self.register_parameter('bias', None)
-        self.reset_parameters()
-
         self.random_numbers = HasherFactory.get("uhash", self.seed).random_numbers.to('cpu')
 
-    def reset_parameters(self) -> None:
-        # Setting a=sqrt(5) in kaiming_uniform is the same as initializing with
-        # uniform(-1/sqrt(in_features), 1/sqrt(in_features)). 
-        init.kaiming_uniform_(self.weight, a=math.sqrt(5))
-        #if self.bias is not None:
-        #    fan_in, _ = init._calculate_fan_in_and_fan_out(self.weight)
-        #    bound = 1 / math.sqrt(fan_in) if fan_in > 0 else 0
-        #    init.uniform_(self.bias, -bound, bound)
+        self.weight = nn.Parameter(torch.zeros((self.out_features, self.red_in_features), **factory_kwargs))
+
+        if bias:
+            self.bias = nn.Parameter(torch.zeros(self.out_features, **factory_kwargs))
+        else:
+            self.register_parameter('bias', None)
+        self.initialize_parameters()
+
+
+    def initialize_parameters(self) -> None:
+        full_weight = torch.zeros((self.out_features, self.in_features), device=self.weight.device, dtype=self.weight.dtype)
+        bound = 1 / math.sqrt(self.in_features)
+        nn.init.uniform_(full_weight, -bound, bound)
+        IDX = SSL.get_idx(-1, self.in_features, self.out_features, block_m=self.BLOCK_SIZE_M, block_k=self.BLOCK_SIZE_K, block_n=self.BLOCK_SIZE_N, 
+                        R3=self.random_numbers[3].item(), R2=self.random_numbers[2].item(), R1=self.random_numbers[1].item(), R0=self.random_numbers[0].item(), 
+                        reduction_factor=self.redn_factor, device=self.weight.device) # K x N
+        IDX = torch.transpose(IDX, 0, 1).contiguous()
+        comp_weight = torch.zeros_like(self.weight.data).view(-1)
+        comp_ct = torch.zeros_like(self.weight.data).view(-1)
+        ones = torch.ones_like(full_weight).view(-1)
+        full_weight = full_weight.view(-1)
+        comp_weight.scatter_add_(0, IDX.view(-1), full_weight)
+        comp_ct.scatter_add_(0, IDX.view(-1), ones)
+        comp_weight = comp_weight / (1e-6 + comp_ct)
+        comp_weight = comp_weight.view(*self.weight.shape)
+        self.weight.data[:,:] = comp_weight
+        if self.bias is not None:
+            nn.init.uniform_(self.bias, -bound, bound)
             
 
     def forward(self, x):
@@ -73,21 +91,17 @@ class SSL(nn.Module):
             x = x.view(*shape[:-1], x.shape[-1]).contiguous()
         return x
 
-    #def get_idx()
 
     def autotune(self):
 
         device = torch.device('cuda') if torch.cuda.is_available() else (_ for _ in ()).throw(RuntimeError("CUDA is not available. Please run on a CUDA-capable GPU."))
-        
-        self.best_configs = {}
-        
-        batch_size = kwargs.get('batch_size', 32)
-        sample_input = torch.randn(batch_size, self.in_features, device=device)
-        output = torch.empty(batch_size, self.out_features, device=device)
+                
+        sample_input = torch.randn(self.batch_size, self.in_features, device=device, dtype=self.weight.dtype)
+        output = torch.empty(self.batch_size, self.out_features, device=device, dtype=self.weight.dtype)
 
-        block_m, block_k, block_n = (torch.zeros((1,), device=device), 
-                                    torch.zeros((1,), device=device), 
-                                    torch.zeros((1,), device=device), 
+        block_m, block_k, block_n = (torch.zeros((1,), device=device, dtype=torch.int), 
+                                    torch.zeros((1,), device=device, dtype=torch.int), 
+                                    torch.zeros((1,), device=device, dtype=torch.int), 
                                     )
 
         M, K = sample_input.shape
@@ -101,10 +115,9 @@ class SSL(nn.Module):
                 triton.cdiv(M, META['BLOCK_SIZE_M'])
                 * triton.cdiv(N, META['BLOCK_SIZE_N']),
             )
-
         ssl_forward_kernel_pretune[grid](
             sample_input, self.weight, self.bias, output,
-            block_m, block_k, block_n 
+            block_m, block_k, block_n, 
             M, N, K, K // self.redn_factor,
             sample_input.stride(0), sample_input.stride(1),
             self.weight.stride(0), self.weight.stride(1),
@@ -113,14 +126,37 @@ class SSL(nn.Module):
             R3=R3, R2=R2, R1=R1, R0=R0,
             GROUP_SIZE_M=1,
             VEC=default_vec,
+            BIAS=self.bias is not None,
             redn_factor=self.redn_factor
         )
 
-        self.BLOCK_SIZE_M = block_m
-        self.BLOCK_SIZE_K = block_k
-        self.BLOCK_SIZE_N = block_n
+        self.BLOCK_SIZE_M = block_m.item()
+        self.BLOCK_SIZE_K = block_k.item()
+        self.BLOCK_SIZE_N = block_n.item()
 
-
+    @lru_cache(maxsize=None)
+    @staticmethod
+    def get_idx(M, K, N, block_m, block_k, block_n, R3,R2,R1,R0, reduction_factor, device):
+        # weight shape is N,K || but we will start with how it is viewed in sslforward
+        if reduction_factor == 1: 
+            return torch.arange(K * N, device=device).reshape(N, K).T
+        red_input_dim = (K  // reduction_factor + block_k - 1) // block_k * block_k   # keep it multiple of block size k 
+        IDX = torch.arange(N*red_input_dim, device=device).long().reshape(N, red_input_dim)
+        IDXT = IDX.T
+        FullIDX = torch.zeros((K, N), device=device, dtype=torch.long)
+        for i in range((K+block_k -1)//block_k):
+            for j in range((N+block_k-1)//block_n):
+                it = i // reduction_factor
+                itin = i % reduction_factor
+                IDX = (R3 + R2 * j + R1*(it+1))
+                IDX1 = R0*(itin+1)
+                VEC = default_vec
+                offset = block_k - ((IDX + IDX1) * VEC) % block_k
+                locs_k = (offset + torch.arange(block_k, device=device).long() ) % block_k
+                block = IDXT[it*block_k:(it+1)*block_k,j*block_n:(j+1)*block_n][locs_k]
+                kl, nl = FullIDX[i*block_k:(i+1)*block_k,j*block_n:(j+1)*block_n].shape
+                FullIDX[i*block_k:(i+1)*block_k,j*block_n:(j+1)*block_n] = block[:kl,:nl]
+        return FullIDX
     
     
     @property

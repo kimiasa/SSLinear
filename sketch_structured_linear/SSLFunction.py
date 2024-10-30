@@ -5,8 +5,13 @@ import torch.nn as nn
 import torch.nn.init as init
 import numpy as np
 
-from .SSL_Kernel.SSLForward import *
-from .SSL_Kernel.SSLBackward import *
+try:
+    from .SSL_Kernel.SSLForward import *
+    from .SSL_Kernel.SSLBackward import *
+except:
+    from SSL_Kernel.SSLForward import *
+    from SSL_Kernel.SSLBackward import *
+
 
 import time
 
@@ -43,7 +48,7 @@ class SketchStructuredLinearFunction(torch.autograd.Function):
         batch_size, in_features, out_features= input.shape[0], input.shape[1], weight.shape[0]
 
         output = ssl_forward_tl(input, weight.T, bias, batch_size, in_features, out_features, redn_factor, R3, R2, R1, R0, 
-                                BLOCK_SIZE_M=BLOCK_SIZE_M, BLOCK_SIZE_N=BLOCK_SIZE_N, BLOCK_SIZE_K=BLOCK_SIZE_K,
+                                BLOCK_SIZE_M=BLOCK_SIZE_M, BLOCK_SIZE_N=BLOCK_SIZE_N, BLOCK_SIZE_K=BLOCK_SIZE_K, BIAS=bias is not None,
                                 allow_tf32=controls['triton_allow_tf32'], allow_autotune=controls['triton_allow_autotune'])
         
         ctx.save_for_backward(input, weight, bias, random_numbers)
@@ -56,7 +61,7 @@ class SketchStructuredLinearFunction(torch.autograd.Function):
     @torch.cuda.amp.custom_bwd
     def backward(ctx, grad):
         
-        input, weight, _, random_numbers = ctx.saved_tensors
+        input, weight, bias, random_numbers = ctx.saved_tensors
         
         assert(random_numbers.numel() == 4)
         R3, R2, R1, R0 = random_numbers[3].item(), random_numbers[2].item(
@@ -67,15 +72,20 @@ class SketchStructuredLinearFunction(torch.autograd.Function):
         redn_factor = ctx.redn_factor
         M, K, N= input.shape[0], input.shape[1], weight.shape[0]
 
-        input_grad, weight_grad = ssl_backward_tl(input.contiguous(), weight, grad.contiguous(), M, K, N, redn_factor, R3, R2, R1,
-                                                    R0, allow_tf32=controls['triton_allow_tf32'],
-                                                    BLOCK_SIZE_M=BLOCK_SIZE_M, BLOCK_SIZE_N=BLOCK_SIZE_N, BLOCK_SIZE_K=BLOCK_SIZE_K)
-    
+        if redn_factor <= 1:
+            input_grad = torch.matmul(grad, weight)
+            weight_grad = torch.matmul(input.T, grad).T
+
+        else:
+            input_grad, weight_grad = ssl_backward_tl(input.contiguous(), weight, grad.contiguous(), M, K, N, redn_factor, R3, R2, R1,
+                                                        R0, allow_tf32=controls['triton_allow_tf32'],
+                                                        BLOCK_SIZE_M=BLOCK_SIZE_M, BLOCK_SIZE_N=BLOCK_SIZE_N, BLOCK_SIZE_K=BLOCK_SIZE_K)
+        
         bias_grad = None
-        if ctx.needs_input_grad[2]:
+        if ctx.needs_input_grad[2] and bias is not None:
             bias_grad = grad.sum(dim=0)
 
-        return input_grad, weight_grad, bias_grad, None, None 
+        return input_grad, weight_grad, bias_grad, None, None, None, None, None 
     
 ssl_linear = SketchStructuredLinearFunction.apply
 
