@@ -61,7 +61,7 @@ class SketchStructuredLinearFunction(torch.autograd.Function):
     @torch.cuda.amp.custom_bwd
     def backward(ctx, grad):
         
-        input, weight, _, random_numbers = ctx.saved_tensors
+        input, weight, bias, random_numbers = ctx.saved_tensors
         
         assert(random_numbers.numel() == 4)
         R3, R2, R1, R0 = random_numbers[3].item(), random_numbers[2].item(
@@ -82,10 +82,10 @@ class SketchStructuredLinearFunction(torch.autograd.Function):
                                                         BLOCK_SIZE_M=BLOCK_SIZE_M, BLOCK_SIZE_N=BLOCK_SIZE_N, BLOCK_SIZE_K=BLOCK_SIZE_K)
         
         bias_grad = None
-        if ctx.needs_input_grad[2]:
+        if ctx.needs_input_grad[2] and bias is not None:
             bias_grad = grad.sum(dim=0)
 
-        return input_grad, weight_grad, bias_grad, None, None, None, None, None 
+        return input_grad, weight_grad, None, None, None, None, None 
     
 ssl_linear = SketchStructuredLinearFunction.apply
 

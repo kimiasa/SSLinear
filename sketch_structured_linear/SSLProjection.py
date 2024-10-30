@@ -6,31 +6,33 @@ from sketch_structured_linear.SSL import SSL
 
 
 def get_from_linear(weight, in_dim, out_dim, bias, seed, red_fac):
-        mod = SSL(in_dim, out_dim, redn_factor=red_fac, seed=seed, bias=(bias is not None))
-        mod.bias.data[:] = bias.data[:]
-        mod.autotune()
+    mod = SSL(in_dim, out_dim, redn_factor=red_fac, seed=seed, bias=(bias is not None))
+    mod.bias.data[:] = bias.data[:]
+    
+    mod.autotune()
 
-        if red_fac > 1:
-            random_numbers = mod.random_numbers
-            R3, R2, R1, R0 = random_numbers[3].item(), random_numbers[2].item(
-                    ), random_numbers[1].item(), random_numbers[0].item()
-            IDX = mod.get_idx(-1, in_dim, out_dim, block_m=mod.BLOCK_SIZE_M, block_k=mod.BLOCK_SIZE_K, block_n=mod.BLOCK_SIZE_N, R3=R3,R2=R2,R1=R1,R0=R0, reduction_factor=red_fac, device=weight.device) # K x N
-            IDX = torch.transpose(IDX, 0, 1)
-            IDX = IDX.contiguous()
-            comp_weight = torch.zeros_like(mod.weight.data).view(-1)
-            comp_ct = torch.zeros_like(mod.weight.data).view(-1)
-            ones = torch.ones_like(weight).view(-1)
-            weight = weight.view(-1)
-            comp_weight.scatter_add_(0, IDX.view(-1), weight)
-            comp_ct.scatter_add_(0, IDX.view(-1), ones)
-            comp_weight = comp_weight / (1e-6 + comp_ct)
-            comp_weight = comp_weight.view(*mod.weight.shape)
-            mod.weight.data[:,:] = comp_weight
-        else:
-            mod.weight.data[:,:] = weight
+    if red_fac > 1:
+        random_numbers = mod.random_numbers
+        R3, R2, R1, R0 = random_numbers[3].item(), random_numbers[2].item(
+                ), random_numbers[1].item(), random_numbers[0].item()
+        IDX = SSL.get_idx(-1, in_dim, out_dim, block_m=mod.BLOCK_SIZE_M, block_k=mod.BLOCK_SIZE_K, block_n=mod.BLOCK_SIZE_N, 
+                        R3=R3, R2=R2, R1=R1, R0=R0, 
+                        reduction_factor=red_fac, device=weight.device) # K x N
+        IDX = torch.transpose(IDX, 0, 1)
+        IDX = IDX.contiguous()
+        comp_weight = torch.zeros_like(mod.weight.data).view(-1)
+        comp_ct = torch.zeros_like(mod.weight.data).view(-1)
+        ones = torch.ones_like(weight).view(-1)
+        weight = weight.view(-1)
+        comp_weight.scatter_add_(0, IDX.view(-1), weight)
+        comp_ct.scatter_add_(0, IDX.view(-1), ones)
+        comp_weight = comp_weight / (1e-6 + comp_ct)
+        comp_weight = comp_weight.view(*mod.weight.shape)
+        mod.weight.data[:,:] = comp_weight
+    else:
+        mod.weight.data[:,:] = weight
 
-        return mod
-        
+    return mod
 
 def is_linear_layer(module: nn.Module) -> bool:
     """Check if the module is a linear layer that should be converted."""
@@ -102,7 +104,7 @@ def convert_to_ss_linear(
             
             if is_linear_layer(child) and not should_skip_module(child_path):
                 # Convert to SSLinear
-                new_layer = SSLinear.get_from_linear(
+                new_layer = get_from_linear(
                     weight=child.weight.data,
                     in_dim=child.in_features,
                     out_dim=child.out_features,

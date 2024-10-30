@@ -64,6 +64,25 @@ def test_sslinear():
         print(fac, times)
         print(fac, np.mean(times[3:]), "+-", np.std(times[3:]))
 
+
+def get_hashed_idx(redn_factor: int,
+                   K: int, N: int,
+                   R3: int, R2: int, R1: int, R0: int,
+                   BLOCK_SIZE_N: int, BLOCK_SIZE_K: int, VEC: int
+                   ):
+    stride_bn = K // redn_factor
+    stride_bk = 1
+    idx = torch.zeros((N, K), dtype=torch.float16).long()
+    for pid_n in range((N + BLOCK_SIZE_N - 1) // BLOCK_SIZE_N):
+        for k in range(0, (K + BLOCK_SIZE_K * redn_factor - 1) // (BLOCK_SIZE_K * redn_factor)):
+            for ck in range(0, redn_factor):
+                block = (k * BLOCK_SIZE_K + (torch.arange(BLOCK_SIZE_K).long() +
+                                            (BLOCK_SIZE_K - (((R2 * pid_n + R1 * (k + 1) + R0 * (ck + 1) + R3) * VEC) % BLOCK_SIZE_K))) % BLOCK_SIZE_K)[None, :] * stride_bk + \
+                                            (pid_n * BLOCK_SIZE_N + torch.arange(BLOCK_SIZE_N)[:, None]) * stride_bn
+                off = k * BLOCK_SIZE_K * redn_factor + ck * BLOCK_SIZE_K
+                idx[pid_n * BLOCK_SIZE_N:(pid_n + 1) * BLOCK_SIZE_N, off:off + BLOCK_SIZE_K] = block
+    return idx
+
 def test_bwd():
 
     import numpy as np
@@ -119,7 +138,7 @@ def test_bwd():
                 c_torch_weight_grad = torch_weight_grad.T
         
             torch_pack = [torch_loss, torch_input_grad, c_torch_weight_grad]
-            print(torch_loss)
+            print(torch_loss, triton_loss)
             print(M, K, N, F,
                     torch.allclose(triton_pack[0], torch_pack[0], atol=1e-2, rtol=1e-5),
                     torch.allclose(triton_pack[1], torch_pack[1], atol=1e-2, rtol=1e-5),
