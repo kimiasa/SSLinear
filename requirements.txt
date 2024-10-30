@@ -1,0 +1,14 @@
+datasets==2.19.0
+einops==0.8.0
+evaluate==0.4.3
+matplotlib==3.8.4
+mmh3==4.1.0
+numpy==2.1.2
+pandas==2.2.3
+pytorch_block_sparse==0.1.2
+setuptools==75.1.0
+torch==2.3.0
+torch==2.5.0
+tqdm==4.66.5
+transformers==4.40.1
+triton==3.1.0
