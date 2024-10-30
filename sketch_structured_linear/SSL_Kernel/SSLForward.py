@@ -396,9 +396,30 @@ def ssl_forward_core(
             a_ptrs += BLOCK_SIZE_K * stride_ak
             a = a0 + a1
         elif redn_factor == 4:
-            a = ssl_pipeline_a(offs_k, IDX, IDX1, stride_ak, k, a_ptrs, a_ptr, R0, VEC, BLOCK_SIZE_M, BLOCK_SIZE_K, redn_factor, EVEN_K, K, 3)
+            IDX1 += R0
+            a0 = ssl_acc_a(offs_k, IDX, IDX1, stride_ak, 0, k, a_ptrs, VEC, BLOCK_SIZE_K, redn_factor, EVEN_K, K)
+            a_ptrs += BLOCK_SIZE_K * stride_ak
+            IDX1 += R0
+            a1 = ssl_acc_a(offs_k, IDX, IDX1, stride_ak, 1, k, a_ptrs, VEC, BLOCK_SIZE_K, redn_factor, EVEN_K, K)
+            a_ptrs += BLOCK_SIZE_K * stride_ak
+            IDX1 += R0
+            a2 = ssl_acc_a(offs_k, IDX, IDX1, stride_ak, 2, k, a_ptrs, VEC, BLOCK_SIZE_K, redn_factor, EVEN_K, K)
+            a_ptrs += BLOCK_SIZE_K * stride_ak
+            IDX1 += R0
+            a3 = ssl_acc_a(offs_k, IDX, IDX1, stride_ak, 3, k, a_ptrs, VEC, BLOCK_SIZE_K, redn_factor, EVEN_K, K)
+            a_ptrs += BLOCK_SIZE_K * stride_ak
+            a = a0 + a1 + a2 + a3
         else:
-            a = ssl_pipeline_a(offs_k, IDX, IDX1, stride_ak, k, a_ptrs, a_ptr, R0, VEC, BLOCK_SIZE_M, BLOCK_SIZE_K, redn_factor, EVEN_K, K, 4)
+            a = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_K), dtype=tl.float32)
+            for ck in range(0, redn_factor):
+                IDX1 += R0
+                offset = ((((offs_k + (IDX + IDX1) * VEC)) % BLOCK_SIZE_K) * stride_ak)[None, :]
+                if EVEN_K:
+                    a += tl.load(a_ptrs + offset)
+                else:
+                    a += tl.load(a_ptrs + offset, mask=offset < K - (
+                        k * redn_factor + ck) * BLOCK_SIZE_K, other=0.0)
+                a_ptrs += BLOCK_SIZE_K * stride_ak
         if EVEN_K:
             b = tl.load(b_ptrs)
         else:
@@ -413,7 +434,7 @@ def ssl_forward_core(
     if BIAS:
         bias = tl.load(o_ptr + offs_bn)
         accumulator = accumulator + bias[None, :]
-    c = accumulator.to(tl.float16)
+    c = accumulator.to(c_ptr.dtype.element_ty)
 
     # -----------------------------------------------------------
     # Write back the block of the output matrix C with masks.

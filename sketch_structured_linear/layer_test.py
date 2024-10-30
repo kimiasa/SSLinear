@@ -109,7 +109,6 @@ def test_bwd():
             triton_weight_grad = mod.weight.grad.clone()
         
             triton_pack = [triton_loss, triton_input_grad, triton_weight_grad]
-            print(mod.BLOCK_SIZE_M)
 
             if mod.redn_factor > 1:       
                 random_numbers = mod.random_numbers

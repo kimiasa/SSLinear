@@ -8,11 +8,9 @@ from torch.nn import init
 try:
     from .SSLFunction import ssl_linear
     from .SSL_Kernel.SSLForward import ssl_forward_kernel_pretune, default_vec
-    from .Hasher import *
 except:
     from SSLFunction import ssl_linear
     from SSL_Kernel.SSLForward import ssl_forward_kernel_pretune, default_vec
-    from Hasher import *
 
 from functools import lru_cache
 
@@ -20,6 +18,15 @@ from functools import lru_cache
 BLOCK_K_SIZE_MIN = 32
 
 class SSL(nn.Module):
+    P = 45007
+    R = 4
+
+    '''
+        Args:
+            P (int): The prime number used in the hash function
+            R (int): Number of random numbers
+    '''
+
     def __init__(self, in_features: int, out_features: int, bias: bool = True, 
                  redn_factor: int = 2, seed: int = 1024,
                  device=None, dtype=None, **kwargs) -> None:
@@ -38,15 +45,19 @@ class SSL(nn.Module):
         self.red_in_features = (in_features  // redn_factor + self.BLOCK_SIZE_K - 1) // self.BLOCK_SIZE_K * self.BLOCK_SIZE_K 
 
         self.seed = seed + kwargs.get('layer_idx', 0)
-        self.random_numbers = HasherFactory.get("uhash", self.seed).random_numbers.to('cpu')
+        
+        # random numbers are always on the CPU
+        self.random_numbers = self._generate_random_numbers(seed)
 
-        self.weight = nn.Parameter(torch.zeros((self.out_features, self.red_in_features), **factory_kwargs))
-
+        # weight
+        self.weight = nn.Parameter(torch.zeros((out_features, self.red_in_features), dtype=dtype), requires_grad = True)
+        torch.nn.init.xavier_uniform_(self.weight)
+        # bias term
         if bias:
-            self.bias = nn.Parameter(torch.zeros(self.out_features, **factory_kwargs))
+            self.bias = nn.Parameter(torch.zeros(self.out_features, dtype=dtype))
         else:
             self.register_parameter('bias', None)
-        self.initialize_parameters()
+        #self.initialize_parameters()
 
 
     def initialize_parameters(self) -> None:
@@ -91,6 +102,12 @@ class SSL(nn.Module):
             x = x.view(*shape[:-1], x.shape[-1]).contiguous()
         return x
 
+    def _generate_random_numbers(self, seed: int):
+        torch.manual_seed(seed)
+        x = torch.randint(0, SSL.P, (SSL.R - 1,)).type(
+            torch.int32).requires_grad_(False)
+        x = torch.cat([torch.tensor([SSL.P], dtype=torch.int32), x])
+        return x.requires_grad_(False).cpu()
 
     def autotune(self):
 
