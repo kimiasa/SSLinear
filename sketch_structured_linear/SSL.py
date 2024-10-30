@@ -126,6 +126,7 @@ class SSL(nn.Module):
             R3=R3, R2=R2, R1=R1, R0=R0,
             GROUP_SIZE_M=1,
             VEC=default_vec,
+            BIAS=self.bias is not None,
             redn_factor=self.redn_factor
         )
 

@@ -48,7 +48,7 @@ class SketchStructuredLinearFunction(torch.autograd.Function):
         batch_size, in_features, out_features= input.shape[0], input.shape[1], weight.shape[0]
 
         output = ssl_forward_tl(input, weight.T, bias, batch_size, in_features, out_features, redn_factor, R3, R2, R1, R0, 
-                                BLOCK_SIZE_M=BLOCK_SIZE_M, BLOCK_SIZE_N=BLOCK_SIZE_N, BLOCK_SIZE_K=BLOCK_SIZE_K,
+                                BLOCK_SIZE_M=BLOCK_SIZE_M, BLOCK_SIZE_N=BLOCK_SIZE_N, BLOCK_SIZE_K=BLOCK_SIZE_K, BIAS=bias is not None,
                                 allow_tf32=controls['triton_allow_tf32'], allow_autotune=controls['triton_allow_autotune'])
         
         ctx.save_for_backward(input, weight, bias, random_numbers)
@@ -85,7 +85,7 @@ class SketchStructuredLinearFunction(torch.autograd.Function):
         if ctx.needs_input_grad[2]:
             bias_grad = grad.sum(dim=0)
 
-        return input_grad, weight_grad, bias_grad, None, None 
+        return input_grad, weight_grad, bias_grad, None, None, None, None, None 
     
 ssl_linear = SketchStructuredLinearFunction.apply
 
