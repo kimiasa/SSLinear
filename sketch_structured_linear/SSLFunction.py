@@ -85,7 +85,7 @@ class SketchStructuredLinearFunction(torch.autograd.Function):
         if ctx.needs_input_grad[2] and bias is not None:
             bias_grad = grad.sum(dim=0)
 
-        return input_grad, weight_grad, None, None, None, None, None 
+        return input_grad, weight_grad, bias_grad, None, None, None, None, None 
     
 ssl_linear = SketchStructuredLinearFunction.apply
 
