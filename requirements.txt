@@ -8,7 +8,6 @@ pandas==2.2.3
 pytorch_block_sparse==0.1.2
 setuptools==75.1.0
 torch==2.3.0
-torch==2.5.0
 tqdm==4.66.5
 transformers==4.40.1
 triton==3.1.0
