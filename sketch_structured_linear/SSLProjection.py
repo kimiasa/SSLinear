@@ -1,3 +1,4 @@
+import logging
 import torch
 import torch.nn as nn
 from typing import List, Union, Optional
@@ -98,6 +99,8 @@ def convert_to_ss_linear(
     def convert_module(module: nn.Module, module_path: str) -> None:
         """Recursively convert linear layers to SSLinear."""
         nonlocal current_seed
+
+        logging.info(f"Projecting model at {model_path} onto SSLinear and autotuning blocksize. This may take a few minutes")
         
         for name, child in module.named_children():
             child_path = f"{module_path}.{name}" if module_path else name
