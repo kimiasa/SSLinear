@@ -151,7 +151,6 @@ class SSL(nn.Module):
         self.BLOCK_SIZE_K = block_k.item()
         self.BLOCK_SIZE_N = block_n.item()
 
-    @lru_cache(maxsize=None)
     @staticmethod
     def get_idx(M, K, N, block_m, block_k, block_n, R3,R2,R1,R0, reduction_factor, device):
         # weight shape is N,K || but we will start with how it is viewed in sslforward
